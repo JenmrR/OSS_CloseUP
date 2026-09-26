@@ -1,7 +1,7 @@
 # OSS Close-UP 개발 환경
-#   docker compose up -d --build   → db, backend 기동
+#   docker compose up -d --build   → db, backend, worker 기동
 #   curl http://localhost:8000/health
-# worker(검사 도구)는 3단계에서 추가
+#   docker compose exec worker /app/run_sample_scan.sh   → 샘플 검사
 
 services:
   db:
@@ -13,6 +13,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?.env에 POSTGRES_DB 필요}
     volumes:
       - pgdata:/var/lib/postgresql/data      # 컨테이너를 지워도 데이터 유지
+    # 포트를 PC에 열지 않음: backend는 도커 내부망으로 접속하고,
+    # 직접 볼 때는 `docker compose exec db psql ...` 사용
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -35,5 +37,26 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
+  worker:
+    build: ./worker
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}        # GitHub 조회는 worker만 함
+      TRIVY_CACHE_DIR: /cache/trivy
+    volumes:
+      - trivy-cache:/cache/trivy             # Trivy 취약점 DB 캐시 (매번 다시 받지 않게)
+      - ./samples:/work/samples:ro           # 샘플 입력 (읽기 전용)
+      - ./results:/work/results              # 검사 결과 저장 (PC의 results 폴더)
+    depends_on:
+      db:
+        condition: service_healthy
+    # 포트 없음: worker는 외부에서 접속할 일이 없음
+
 volumes:
   pgdata:
+  trivy-cache:
