@@ -1,0 +1,23 @@
+# 비밀값 — 절대 커밋 금지
+.env
+.env.*
+!.env.example
+
+# 검사 결과·캐시 (샘플 결과는 필요하면 따로 공유)
+results/
+.trivy-cache/
+osvdb/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# OS / 에디터
+.DS_Store
+.idea/
+.vscode/
