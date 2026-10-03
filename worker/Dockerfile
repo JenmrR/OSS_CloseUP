@@ -37,6 +37,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
 COPY --from=tools /usr/local/bin/trivy /usr/local/bin/osv-scanner /usr/local/bin/syft /usr/local/bin/
 
 WORKDIR /app
+COPY requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY run_sample_scan.sh ./run_sample_scan.sh
 
