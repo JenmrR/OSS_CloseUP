@@ -24,3 +24,8 @@ def health():
             status_code=503,
             content={"status": "degraded", "db": "error", "detail": type(e).__name__},
         )
+
+
+from .uploads import router, UploadBodyLimit
+app.add_middleware(UploadBodyLimit)
+app.include_router(router)

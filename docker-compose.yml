@@ -30,10 +30,13 @@ services:
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_NAME: ${POSTGRES_DB}
+      SCAN_STORAGE_ROOT: /work/uploads
       # GITHUB_TOKEN은 backend에 주지 않음 (검사를 하는 worker에만 3단계에서 전달)
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - scan-uploads:/work/uploads
     ports:
       - "127.0.0.1:8000:8000"
 
@@ -47,8 +50,10 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_NAME: ${POSTGRES_DB}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}        # GitHub 조회는 worker만 함
+      SCAN_STORAGE_ROOT: /work/uploads
       TRIVY_CACHE_DIR: /cache/trivy
     volumes:
+      - scan-uploads:/work/uploads:ro
       - trivy-cache:/cache/trivy             # Trivy 취약점 DB 캐시 (매번 다시 받지 않게)
       - ./samples:/work/samples:ro           # 샘플 입력 (읽기 전용)
       - ./results:/work/results              # 검사 결과 저장 (PC의 results 폴더)
@@ -60,3 +65,4 @@ services:
 volumes:
   pgdata:
   trivy-cache:
+  scan-uploads:

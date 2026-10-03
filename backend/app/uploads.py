@@ -1,0 +1,154 @@
+"""Local MVP upload contract: npm lockfile v2/v3, one project, no npm install."""
+import hashlib
+import json
+import logging
+import os
+from pathlib import Path
+from uuid import UUID, uuid4
+
+import psycopg
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from psycopg.rows import dict_row
+
+from .db import connect
+
+router = APIRouter()
+log = logging.getLogger(__name__)
+PACKAGE_LIMIT = 1024 * 1024
+LOCK_LIMIT = 10 * 1024 * 1024
+BODY_LIMIT = PACKAGE_LIMIT + LOCK_LIMIT + 256 * 1024
+
+
+class UploadBodyLimit:
+    """Bound the entire multipart body before parsing, even without Content-Length."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http' or scope['method'] != 'POST' or scope['path'].rstrip('/') != '/scans':
+            return await self.app(scope, receive, send)
+        from starlette.responses import JSONResponse
+        body = bytearray()
+        while True:
+            msg = await receive()
+            if msg['type'] == 'http.disconnect':
+                return
+            chunk = msg.get('body', b'')
+            if len(body) + len(chunk) > BODY_LIMIT:
+                return await JSONResponse(status_code=413, content={'detail': '업로드 전체 크기 제한을 초과했습니다.'})(scope, receive, send)
+            body.extend(chunk)
+            if not msg.get('more_body', False):
+                break
+        sent = False
+        async def replay():
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {'type': 'http.request', 'body': bytes(body), 'more_body': False}
+            return await receive()
+        await self.app(scope, replay, send)
+
+
+def no_duplicate_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate key')
+        result[key] = value
+    return result
+
+
+def reject_constant(value):
+    raise ValueError(value)
+
+
+def read_json(upload, expected, limit):
+    if upload.filename != expected:
+        raise HTTPException(422, f'파일명은 {expected}이어야 합니다.')
+    data = upload.file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(413, f'{expected}: 최대 {limit // (1024 * 1024)} MiB입니다.')
+    try:
+        obj = json.loads(data.decode('utf-8-sig'), object_pairs_hook=no_duplicate_keys, parse_constant=reject_constant)
+    except (UnicodeError, ValueError, RecursionError):
+        raise HTTPException(422, f'{expected}: 유효한 UTF-8 JSON이 필요합니다.') from None
+    if not isinstance(obj, dict):
+        raise HTTPException(422, f'{expected}: JSON 객체가 필요합니다.')
+    return data, obj
+
+
+def validate_pair(package, lock):
+    if type(lock.get('lockfileVersion')) is not int or lock['lockfileVersion'] not in (2, 3):
+        raise HTTPException(422, '현재 package-lock.json v2/v3만 지원합니다.')
+    packages = lock.get('packages')
+    if not isinstance(packages, dict) or not isinstance(packages.get(''), dict):
+        raise HTTPException(422, 'lock 파일에 packages와 루트 항목이 필요합니다.')
+    root = packages['']
+    if any('workspaces' in x for x in (package, root)):
+        raise HTTPException(422, '현재 단일 프로젝트만 지원합니다(workspaces 미지원).')
+    for path, entry in packages.items():
+        if not isinstance(entry, dict):
+            raise HTTPException(422, 'lock 패키지 항목은 객체여야 합니다.')
+        if entry.get('link') or (path and not path.startswith('node_modules/')):
+            raise HTTPException(422, 'workspace 및 로컬 링크 패키지는 지원하지 않습니다.')
+    for key in ('name', 'version'):
+        values = [x[key] for x in (package, lock, root) if key in x]
+        if any(not isinstance(v, str) or not v.strip() for v in values) or len(set(values)) > 1:
+            raise HTTPException(422, f'두 파일의 {key} 값이 올바르지 않거나 일치하지 않습니다.')
+    for key in ('dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'):
+        for obj in (package, root):
+            deps = obj.get(key, {})
+            if not isinstance(deps, dict) or any(not isinstance(v, str) for v in deps.values()):
+                raise HTTPException(422, f'{key}는 문자열 값의 객체여야 합니다.')
+            if any(v.startswith(('file:', 'link:', 'workspace:')) for v in deps.values()):
+                raise HTTPException(422, '로컬 파일·workspace 의존성은 지원하지 않습니다.')
+        if package.get(key, {}) != root.get(key, {}):
+            raise HTTPException(422, f'package.json과 lock 루트의 {key}가 다릅니다. lock 파일을 갱신해 주세요.')
+    return package.get('name') or lock.get('name') or 'uploaded-project'
+
+
+@router.post('/scans', status_code=202)
+def create_scan(package_json: UploadFile = File(...), package_lock: UploadFile = File(...)):
+    package_bytes, package = read_json(package_json, 'package.json', PACKAGE_LIMIT)
+    lock_bytes, lock = read_json(package_lock, 'package-lock.json', LOCK_LIMIT)
+    name = validate_pair(package, lock)
+    project_id, scan_id = uuid4(), uuid4()
+    storage = Path(os.environ.get('SCAN_STORAGE_ROOT', '/work/uploads'))
+    directory = storage / str(scan_id)
+    inputs = [('package_json', 'package.json', package_bytes), ('package_lock', 'package-lock.json', lock_bytes)]
+    hashes = [hashlib.sha256(item[2]).hexdigest() for item in inputs]
+    created = False
+    try:
+        directory.mkdir(parents=True, mode=0o755)
+        created = True
+        for _, filename, data in inputs:
+            path = directory / filename
+            path.write_bytes(data)
+            path.chmod(0o644)  # worker UID differs; shared volume is worker-read-only
+        with connect() as conn:
+            conn.execute('INSERT INTO projects (project_id, name, package_json_sha256, package_lock_sha256) VALUES (%s,%s,%s,%s)', (project_id, name, *hashes))
+            conn.execute("INSERT INTO scan_runs (scan_id, project_id, status, input_package_json_sha256, input_package_lock_sha256) VALUES (%s,%s,'queued',%s,%s)", (scan_id, project_id, *hashes))
+            for (kind, filename, data), digest in zip(inputs, hashes):
+                conn.execute('INSERT INTO scan_artifacts (scan_id, kind, storage_key, sha256, size_bytes, media_type) VALUES (%s,%s,%s,%s,%s,%s)', (scan_id, kind, f'{scan_id}/{filename}', digest, len(data), 'application/json'))
+    except (OSError, psycopg.Error):
+        # Retain any files after a DB error: a lost COMMIT acknowledgement may
+        # mean the transaction succeeded. Deleting then would strand a queued scan.
+        # Reconcile unreferenced directories offline; never expose errors/secrets.
+        log.exception('Upload persistence failed; scan_id=%s; files_created=%s', scan_id, created)
+        raise HTTPException(503, '저장에 실패했습니다. 서버 로그를 확인해 주세요.') from None
+    return {'project_id': str(project_id), 'scan_id': str(scan_id), 'status': 'queued', 'status_url': f'/scans/{scan_id}'}
+
+
+@router.get('/scans/{scan_id}')
+def get_scan(scan_id: UUID):
+    try:
+        with connect() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute('SELECT scan_id, project_id, status, created_at, started_at, finished_at, tool_status FROM scan_runs WHERE scan_id=%s', (scan_id,))
+                row = cur.fetchone()
+    except psycopg.Error:
+        log.exception('Scan lookup failed')
+        raise HTTPException(503, 'DB 조회에 실패했습니다.') from None
+    if row is None:
+        raise HTTPException(404, '검사를 찾을 수 없습니다.')
+    return row

@@ -1,0 +1,94 @@
+import io
+import json
+from contextlib import contextmanager
+from unittest.mock import MagicMock
+import pytest
+import psycopg
+from fastapi.testclient import TestClient
+from app.main import app
+from app import uploads
+
+@pytest.fixture
+def setup(tmp_path, monkeypatch):
+    monkeypatch.setenv('SCAN_STORAGE_ROOT', str(tmp_path))
+    conn = MagicMock()
+    @contextmanager
+    def connect():
+        yield conn
+    monkeypatch.setattr(uploads, 'connect', connect)
+    return TestClient(app), tmp_path, conn
+
+def files(package=None, lock=None):
+    package = package if package is not None else {'name': 'demo', 'version': '1.0.0'}
+    lock = lock if lock is not None else {'name': 'demo', 'lockfileVersion': 3, 'packages': {'': package}}
+    return {'package_json': ('package.json', json.dumps(package)), 'package_lock': ('package-lock.json', json.dumps(lock))}
+
+def test_success_and_exact_artifact_bytes(setup):
+    client, root, conn = setup
+    payload = files()
+    r = client.post('/scans', files=payload)
+    assert r.status_code == 202, r.text
+    assert r.json()['status'] == 'queued'
+    d = root / r.json()['scan_id']
+    assert (d / 'package.json').read_bytes() == payload['package_json'][1].encode()
+    assert (d / 'package-lock.json').exists()
+    assert conn.execute.call_count == 4
+
+@pytest.mark.parametrize('bad', ['[]', '{', '{"name": "a", "name": "b"}', '{"name": NaN}'])
+def test_bad_json_no_side_effects(setup, bad):
+    client, root, conn = setup
+    f = files(); f['package_json'] = ('package.json', bad)
+    assert client.post('/scans', files=f).status_code == 422
+    assert not list(root.iterdir())
+    conn.execute.assert_not_called()
+
+def test_missing_file(setup):
+    client, _, _ = setup
+    assert client.post('/scans', files={'package_json': ('package.json', '{}')}).status_code == 422
+
+@pytest.mark.parametrize('lock', [
+    {'lockfileVersion': 1},
+    {'lockfileVersion': 3, 'packages': {'': {'name':'other'}}},
+    {'lockfileVersion': 3, 'packages': {'': {'dependencies': {'x': '1'}}}},
+    {'lockfileVersion': 3, 'packages': {'': {}, 'node_modules/x': {'link': True}}},
+])
+def test_bad_lock(setup, lock):
+    client, root, _ = setup
+    assert client.post('/scans', files=files(lock=lock)).status_code == 422
+    assert not list(root.iterdir())
+
+def test_path_filename(setup):
+    client, root, _ = setup
+    f=files();f['package_json']=('../package.json','{}')
+    assert client.post('/scans',files=f).status_code == 422
+    assert not list(root.iterdir())
+
+def test_file_and_body_limits(setup):
+    client, root, _ = setup
+    f=files();f['package_json']=('package.json', b' '*(uploads.PACKAGE_LIMIT+1))
+    assert client.post('/scans',files=f).status_code == 413
+    assert client.post('/scans',content=b'x'*(uploads.BODY_LIMIT+1)).status_code == 413
+    assert not list(root.iterdir())
+
+def test_db_failure_preserves_files_for_reconciliation(setup, monkeypatch):
+    client, root, _ = setup
+    def fail(): raise psycopg.OperationalError('secret-test-password')
+    monkeypatch.setattr(uploads,'connect',fail)
+    r=client.post('/scans',files=files())
+    assert r.status_code == 503
+    assert 'secret-test-password' not in r.text
+    assert len(list(root.iterdir())) == 1
+
+def test_status_not_found_and_bad_uuid(setup):
+    client, _, conn = setup
+    conn.cursor.return_value.__enter__.return_value.fetchone.return_value = None
+    assert client.get('/scans/00000000-0000-0000-0000-000000000001').status_code == 404
+    assert client.get('/scans/not-a-uuid').status_code == 422
+
+def test_real_sample(setup):
+    from pathlib import Path
+    client, _, _ = setup
+    folder=Path(__file__).resolve().parents[2]/'samples'/'poc77'
+    with (folder/'package.json').open('rb') as a, (folder/'package-lock.json').open('rb') as b:
+        r=client.post('/scans', files={'package_json':('package.json',a),'package_lock':('package-lock.json',b)})
+    assert r.status_code == 202, r.text

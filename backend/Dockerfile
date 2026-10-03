@@ -12,6 +12,7 @@ COPY app ./app
 
 # root가 아닌 사용자로 실행
 RUN useradd --create-home --uid 10001 appuser
+RUN mkdir -p /work/uploads && chown appuser:appuser /work/uploads
 USER appuser
 
 EXPOSE 8000
