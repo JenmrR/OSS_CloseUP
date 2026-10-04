@@ -27,5 +27,7 @@ def health():
 
 
 from .uploads import router, UploadBodyLimit
+from .sbom import router as sbom_router
 app.add_middleware(UploadBodyLimit)
 app.include_router(router)
+app.include_router(sbom_router)

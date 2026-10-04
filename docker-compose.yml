@@ -31,12 +31,14 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_NAME: ${POSTGRES_DB}
       SCAN_STORAGE_ROOT: /work/uploads
+      SCAN_RESULTS_ROOT: /work/results    # SBOM 다운로드용 (읽기 전용)
       # GITHUB_TOKEN은 backend에 주지 않음 (검사를 하는 worker에만 3단계에서 전달)
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - scan-uploads:/work/uploads
+      - ./results:/work/results:ro         # worker가 쓴 결과를 읽기만 함
     ports:
       - "127.0.0.1:8000:8000"
 
