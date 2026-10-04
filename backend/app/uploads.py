@@ -174,3 +174,32 @@ def get_packages(scan_id: UUID, limit: int = Query(100, ge=1, le=500), offset: i
         raise HTTPException(503, 'DB 조회에 실패했습니다.') from None
     return {'scan_id':str(scan_id),'total':total,'limit':limit,'offset':offset,
             'package_storage':scan['tool_status'].get('package_storage', {'status':'pending'}),'items':items}
+
+
+@router.get('/scans/{scan_id}/maintenance')
+def get_maintenance(scan_id: UUID, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
+    try:
+        with connect() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute('SELECT tool_status FROM scan_runs WHERE scan_id=%s',(scan_id,))
+                scan=cur.fetchone()
+                if scan is None: raise HTTPException(404,'검사를 찾을 수 없습니다.')
+                cur.execute("SELECT count(*) AS total FROM packages WHERE scan_id=%s AND relationship<>'root'",(scan_id,))
+                total=cur.fetchone()['total']
+                cur.execute("""SELECT p.package_id,p.name,p.installed_version,p.lockfile_path,
+                    ms.repository_url,ms.repository_full_name,ms.archived,ms.deprecated,
+                    ms.default_branch,ms.latest_commit_at,ms.latest_release_tag,ms.latest_release_published_at,
+                    COALESCE(ms.github_status,'pending') AS github_status,
+                    COALESCE(ms.npm_status,'pending') AS npm_status,
+                    ms.github_error,ms.npm_error,ms.github_checked_at,ms.npm_checked_at,
+                    ms.raw_github_response->'mapping' AS repository_mapping
+                    FROM packages p LEFT JOIN maintenance_signals ms
+                    ON ms.scan_id=p.scan_id AND ms.package_id=p.package_id
+                    WHERE p.scan_id=%s AND p.relationship<>'root'
+                    ORDER BY p.lockfile_path LIMIT %s OFFSET %s""",(scan_id,limit,offset))
+                items=cur.fetchall()
+    except psycopg.Error:
+        log.exception('Maintenance lookup failed')
+        raise HTTPException(503,'DB 조회에 실패했습니다.') from None
+    return {'scan_id':str(scan_id),'total':total,'limit':limit,'offset':offset,
+            'collection':scan['tool_status'].get('github',{'status':'pending'}),'items':items}

@@ -54,6 +54,7 @@ def test_raw_success_is_partial(tmp_path,monkeypatch):
     monkeypatch.setattr(w,'OUTPUT_ROOT',tmp_path)
     monkeypatch.setattr(w,'verify_inputs',lambda *a:{'package_lock':tmp_path/'lock'})
     monkeypatch.setattr(w,'store_packages',lambda *a,**kw: {})
+    monkeypatch.setattr(w,'collect_maintenance',lambda *a,**kw: {})
     monkeypatch.setattr(w,'run_tool',lambda *a:'completed')
     c=MagicMock();w.process(c,{'scan_id':'s','attempt_count':1})
     assert c.execute.call_args.args[1][0]=='partial'
@@ -62,6 +63,7 @@ def test_all_failed(tmp_path,monkeypatch):
     monkeypatch.setattr(w,'OUTPUT_ROOT',tmp_path)
     monkeypatch.setattr(w,'verify_inputs',lambda *a:{'package_lock':tmp_path/'lock'})
     monkeypatch.setattr(w,'store_packages',lambda *a,**kw: {})
+    monkeypatch.setattr(w,'collect_maintenance',lambda *a,**kw: {})
     monkeypatch.setattr(w,'run_tool',lambda *a:'failed')
     c=MagicMock();w.process(c,{'scan_id':'s','attempt_count':1})
     assert c.execute.call_args.args[1][0]=='failed'

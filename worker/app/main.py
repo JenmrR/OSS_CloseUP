@@ -16,6 +16,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from .package_storage import store_packages
+from .maintenance import collect as collect_maintenance
 
 log = logging.getLogger('worker')
 STOP = threading.Event()
@@ -172,10 +173,17 @@ def process(conn, scan):
             log.exception('package storage failed: %s',sid)
             status(conn,sid,'package_storage',{'status':'failed','reason':'invalid_package_or_syft_data'})
         status(conn,sid,'normalization',{'status':'skipped','reason':'adapter_not_connected'})
-        status(conn,sid,'github',{'status':'skipped','reason':'adapter_not_connected'})
+        def maintenance_tick():
+            if STOP.is_set(): raise InterruptedError('worker_shutdown')
+            heartbeat(conn,sid)
+        try:
+            collect_maintenance(conn,sid,allow_running=True,tick=maintenance_tick)
+        except (ValueError,KeyError,TypeError,OSError):
+            log.exception('maintenance failed: %s',sid)
+            status(conn,sid,'github',{'status':'failed','reason':'maintenance_collection_failed'})
         final='partial' if 'completed' in states else 'failed'
         conn.execute('UPDATE scan_runs SET status=%s,finished_at=now(),heartbeat_at=now(),error_message=%s WHERE scan_id=%s',
-            (final,'normalization_and_github_pending' if final=='partial' else 'all_scanners_failed',sid))
+            (final,'normalization_pending; see tool_status' if final=='partial' else 'all_scanners_failed',sid))
         log.info('scan=%s status=%s',sid,final)
     except (OSError,ValueError,InterruptedError) as exc:
         with conn.transaction():
