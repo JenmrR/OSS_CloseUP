@@ -7,8 +7,7 @@ import threading
 from unittest.mock import MagicMock
 import pytest
 
-spec=importlib.util.spec_from_file_location('worker_main',Path(__file__).parents[1]/'app/main.py')
-w=importlib.util.module_from_spec(spec);spec.loader.exec_module(w)
+from worker.app import main as w
 
 def test_osv_one_is_success(tmp_path,monkeypatch):
     (tmp_path/'osv.json').write_text('{}')
@@ -54,6 +53,7 @@ def test_input_hash_and_path(tmp_path,monkeypatch):
 def test_raw_success_is_partial(tmp_path,monkeypatch):
     monkeypatch.setattr(w,'OUTPUT_ROOT',tmp_path)
     monkeypatch.setattr(w,'verify_inputs',lambda *a:{'package_lock':tmp_path/'lock'})
+    monkeypatch.setattr(w,'store_packages',lambda *a,**kw: {})
     monkeypatch.setattr(w,'run_tool',lambda *a:'completed')
     c=MagicMock();w.process(c,{'scan_id':'s','attempt_count':1})
     assert c.execute.call_args.args[1][0]=='partial'
@@ -61,6 +61,7 @@ def test_raw_success_is_partial(tmp_path,monkeypatch):
 def test_all_failed(tmp_path,monkeypatch):
     monkeypatch.setattr(w,'OUTPUT_ROOT',tmp_path)
     monkeypatch.setattr(w,'verify_inputs',lambda *a:{'package_lock':tmp_path/'lock'})
+    monkeypatch.setattr(w,'store_packages',lambda *a,**kw: {})
     monkeypatch.setattr(w,'run_tool',lambda *a:'failed')
     c=MagicMock();w.process(c,{'scan_id':'s','attempt_count':1})
     assert c.execute.call_args.args[1][0]=='failed'

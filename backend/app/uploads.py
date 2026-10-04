@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import psycopg
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile, Query
 from psycopg.rows import dict_row
 
 from .db import connect
@@ -152,3 +152,25 @@ def get_scan(scan_id: UUID):
     if row is None:
         raise HTTPException(404, '검사를 찾을 수 없습니다.')
     return row
+
+
+@router.get('/scans/{scan_id}/packages')
+def get_packages(scan_id: UUID, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
+    try:
+        with connect() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute('SELECT tool_status FROM scan_runs WHERE scan_id=%s', (scan_id,))
+                scan = cur.fetchone()
+                if scan is None:
+                    raise HTTPException(404, '검사를 찾을 수 없습니다.')
+                cur.execute('SELECT count(*) AS total FROM packages WHERE scan_id=%s', (scan_id,))
+                total = cur.fetchone()['total']
+                cur.execute("""SELECT package_id,name,installed_version,lockfile_path,relationship,
+                    is_direct,purl,licenses,evidence FROM packages WHERE scan_id=%s
+                    ORDER BY lockfile_path LIMIT %s OFFSET %s""", (scan_id, limit, offset))
+                items = cur.fetchall()
+    except psycopg.Error:
+        log.exception('Package lookup failed')
+        raise HTTPException(503, 'DB 조회에 실패했습니다.') from None
+    return {'scan_id':str(scan_id),'total':total,'limit':limit,'offset':offset,
+            'package_storage':scan['tool_status'].get('package_storage', {'status':'pending'}),'items':items}

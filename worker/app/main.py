@@ -15,6 +15,7 @@ from uuid import uuid4
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+from .package_storage import store_packages
 
 log = logging.getLogger('worker')
 STOP = threading.Event()
@@ -164,6 +165,12 @@ def process(conn, scan):
         for spec in commands(paths['package_lock'],out):
             if STOP.is_set(): raise InterruptedError('worker_shutdown')
             states.append(run_tool(conn,scan,*spec,out))
+        try:
+            summary=store_packages(conn,sid,paths,OUTPUT_ROOT,allow_running=True)
+            log.info('scan=%s package_storage=%s',sid,summary)
+        except (OSError,ValueError,KeyError,TypeError):
+            log.exception('package storage failed: %s',sid)
+            status(conn,sid,'package_storage',{'status':'failed','reason':'invalid_package_or_syft_data'})
         status(conn,sid,'normalization',{'status':'skipped','reason':'adapter_not_connected'})
         status(conn,sid,'github',{'status':'skipped','reason':'adapter_not_connected'})
         final='partial' if 'completed' in states else 'failed'
