@@ -203,3 +203,35 @@ def get_maintenance(scan_id: UUID, limit: int = Query(100, ge=1, le=500), offset
         raise HTTPException(503,'DB 조회에 실패했습니다.') from None
     return {'scan_id':str(scan_id),'total':total,'limit':limit,'offset':offset,
             'collection':scan['tool_status'].get('github',{'status':'pending'}),'items':items}
+
+
+@router.get('/scans/{scan_id}/findings')
+def get_findings(scan_id: UUID, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
+    try:
+        with connect() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute('SELECT tool_status FROM scan_runs WHERE scan_id=%s',(scan_id,))
+                scan=cur.fetchone()
+                if scan is None: raise HTTPException(404,'검사를 찾을 수 없습니다.')
+                cur.execute('SELECT count(*) AS total FROM findings WHERE scan_id=%s',(scan_id,))
+                total=cur.fetchone()['total']
+                cur.execute('''SELECT f.*,
+                    COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                        'package_id',p.package_id,'name',p.name,'installed_version',p.installed_version,
+                        'lockfile_path',p.lockfile_path,'relationship',p.relationship,
+                        'fixed_version_candidates',fp.fixed_version_candidates,
+                        'priority',fp.priority,'recommended_fixed_version',fp.recommended_fixed_version)
+                        ORDER BY p.lockfile_path)
+                        FROM finding_packages fp JOIN packages p USING(scan_id,package_id)
+                        WHERE fp.scan_id=f.scan_id AND fp.finding_id=f.finding_id),'[]'::jsonb) AS packages,
+                    COALESCE((SELECT jsonb_agg(m.alias_group_id ORDER BY m.alias_group_id)
+                        FROM advisory_alias_group_members m
+                        WHERE m.scan_id=f.scan_id AND m.finding_id=f.finding_id),'[]'::jsonb) AS alias_group_ids
+                    FROM findings f WHERE f.scan_id=%s ORDER BY f.finding_key LIMIT %s OFFSET %s''',
+                    (scan_id,limit,offset))
+                items=cur.fetchall()
+    except psycopg.Error:
+        log.exception('Finding lookup failed')
+        raise HTTPException(503,'DB 조회에 실패했습니다.') from None
+    return {'scan_id':str(scan_id),'total':total,'limit':limit,'offset':offset,
+            'normalization':scan['tool_status'].get('normalization',{'status':'pending'}),'items':items}

@@ -1,5 +1,5 @@
 """Single active worker MVP: session lock, atomic claim, raw scanner artifacts.
-Normalization/GitHub adapters are not wired yet: successful raw scans remain partial.
+Packages, normalization and maintenance are persisted after scanner execution.
 """
 import hashlib
 import json
@@ -15,6 +15,7 @@ from uuid import uuid4
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+from .finding_storage import store_findings, finalize
 from .package_storage import store_packages
 from .maintenance import collect as collect_maintenance
 
@@ -172,7 +173,12 @@ def process(conn, scan):
         except (OSError,ValueError,KeyError,TypeError):
             log.exception('package storage failed: %s',sid)
             status(conn,sid,'package_storage',{'status':'failed','reason':'invalid_package_or_syft_data'})
-        status(conn,sid,'normalization',{'status':'skipped','reason':'adapter_not_connected'})
+        try:
+            summary=store_findings(conn,sid,paths,OUTPUT_ROOT,allow_running=True)
+            log.info('scan=%s normalization=%s',sid,summary)
+        except (OSError,ValueError,KeyError,TypeError,psycopg.IntegrityError):
+            log.exception('normalization storage failed: %s',sid)
+            status(conn,sid,'normalization',{'status':'failed','reason':'normalization_storage_failed'})
         def maintenance_tick():
             if STOP.is_set(): raise InterruptedError('worker_shutdown')
             heartbeat(conn,sid)
@@ -181,9 +187,9 @@ def process(conn, scan):
         except (ValueError,KeyError,TypeError,OSError):
             log.exception('maintenance failed: %s',sid)
             status(conn,sid,'github',{'status':'failed','reason':'maintenance_collection_failed'})
-        final='partial' if 'completed' in states else 'failed'
+        final=finalize(conn,sid)
         conn.execute('UPDATE scan_runs SET status=%s,finished_at=now(),heartbeat_at=now(),error_message=%s WHERE scan_id=%s',
-            (final,'normalization_pending; see tool_status' if final=='partial' else 'all_scanners_failed',sid))
+            (final,None if final=='completed' else 'incomplete_stages; see tool_status',sid))
         log.info('scan=%s status=%s',sid,final)
     except (OSError,ValueError,InterruptedError) as exc:
         with conn.transaction():
@@ -203,7 +209,7 @@ def main():
                 if not conn.execute('SELECT pg_try_advisory_lock(%s) AS acquired',(LOCK_ID,)).fetchone()['acquired']:
                     STOP.wait(5);continue
                 recover(conn)
-                log.info('active worker=%s; raw scans only, normalization pending',worker_id)
+                log.info('active worker=%s; scanner and storage pipeline ready',worker_id)
                 while not STOP.is_set():
                     scan=claim(conn,worker_id)
                     if scan: process(conn,scan)

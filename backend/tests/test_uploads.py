@@ -92,3 +92,21 @@ def test_real_sample(setup):
     with (folder/'package.json').open('rb') as a, (folder/'package-lock.json').open('rb') as b:
         r=client.post('/scans', files={'package_json':('package.json',a),'package_lock':('package-lock.json',b)})
     assert r.status_code == 202, r.text
+
+
+def test_findings_pending_and_pagination(setup):
+    client, _, conn = setup
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.side_effect = [{'tool_status':{}},{'total':0}]
+    cur.fetchall.return_value = []
+    r = client.get('/scans/00000000-0000-0000-0000-000000000001/findings?limit=10')
+    assert r.status_code == 200
+    assert r.json()['normalization']=={'status':'pending'}
+    assert r.json()['items']==[]
+    assert client.get('/scans/00000000-0000-0000-0000-000000000001/findings?limit=501').status_code==422
+
+
+def test_findings_not_found(setup):
+    client, _, conn = setup
+    conn.cursor.return_value.__enter__.return_value.fetchone.return_value = None
+    assert client.get('/scans/00000000-0000-0000-0000-000000000001/findings').status_code==404
