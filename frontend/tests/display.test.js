@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeProgress, uniqueFixVersions, licenseState, vulnScanFailed, stageProgress } from '../src/display.js'
+import { computeProgress, uniqueFixVersions, licenseState, vulnScanFailed, stageProgress, aiReportView } from '../src/display.js'
 
 const all = (status) => Object.fromEntries(
   ['trivy', 'osv', 'syft', 'package_storage', 'normalization', 'github'].map((k) => [k, { status }]))
@@ -72,4 +72,22 @@ test('vuln scan failure detection for the 0-finding message', () => {
   assert.equal(vulnScanFailed({ tool_status: all('completed') }), false)
   assert.equal(vulnScanFailed({ tool_status: { ...all('completed'), trivy: { status: 'timeout' } } }), true)
   assert.equal(vulnScanFailed(null), false)
+})
+
+
+test('ai report: not generated is a neutral message, not an error', () => {
+  const v = aiReportView({ data: { status: 'not_generated' } })
+  assert.equal(v.tone, 'muted')
+  assert.equal(v.output, undefined)
+})
+
+test('ai report: only succeeded exposes output', () => {
+  assert.deepEqual(aiReportView({ data: { status: 'succeeded', output: { summary: 's' }, prompt_version: 'v0.1' } }).output, { summary: 's' })
+  assert.equal(aiReportView({ data: { status: 'rejected', output: { summary: 'leak' }, message: 'm' } }).output, undefined)
+})
+
+test('ai report: fetch error does not claim results are missing', () => {
+  const v = aiReportView({ error: new Error('x') })
+  assert.equal(v.tone, 'error')
+  assert.match(v.message, /검사 결과는 아래에서 그대로/)
 })

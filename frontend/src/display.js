@@ -83,6 +83,28 @@ export function licenseState(licenses) {
   return 'ok'
 }
 
+// AI 보고서 상태를 화면 문구로 바꾼다. 본문은 succeeded일 때만 보여준다.
+export function aiReportView({ loading, data, error } = {}) {
+  if (loading) return { tone: 'muted', message: 'AI 설명을 불러오는 중입니다.' }
+  if (error) return { tone: 'error', message: 'AI 설명을 불러오지 못했습니다. 검사 결과는 아래에서 그대로 확인할 수 있습니다.' }
+  const status = data && data.status
+  const meta = data && data.prompt_version
+    ? `${data.model || '모델 미기록'} · 프롬프트 ${data.prompt_version}${data.created_at ? ` · ${data.created_at.slice(0, 16).replace('T', ' ')} 생성` : ''}`
+    : null
+  switch (status) {
+    case 'succeeded':
+      return { tone: 'muted', message: '이 검사 결과를 바탕으로 만든 설명입니다.', output: data.output, meta }
+    case 'pending':
+    case 'running':
+      return { tone: 'muted', message: 'AI 설명을 만들고 있습니다.', meta }
+    case 'failed':
+    case 'rejected':
+      return { tone: 'error', message: data.message || '설명을 만들지 못했습니다.', meta }
+    default:
+      return { tone: 'muted', message: 'AI 설명은 아직 준비되지 않았습니다.' }
+  }
+}
+
 // 취약점 검사 단계 중 실패한 것이 있는지. 0건 안내 문구를 고르는 데 쓴다.
 export function vulnScanFailed(scan) {
   const toolStatus = (scan && scan.tool_status) || {}

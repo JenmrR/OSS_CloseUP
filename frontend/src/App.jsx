@@ -7,6 +7,7 @@ import {
   STAGES, ACTIVE, stageProgress, computeProgress,
   uniqueFixVersions, licenseState, vulnScanFailed,
 } from './display'
+import AiReport from './AiReport'
 
 const STATUS_LABEL = {
   pending: '대기', queued: '대기', running: '진행 중', completed: '완료',
@@ -468,6 +469,7 @@ export default function App() {
         <>
           <p className="scan-id">검사 ID <span className="mono">{scanId}</span></p>
           <Progress scan={scan} />
+          <AiReport scanId={scanId} scanStatus={scan && scan.status} />
           <Sbom key={`${scanId}-${reload}`} scanId={scanId} info={sbom} />
 
           <section className="card">
