@@ -141,6 +141,7 @@ function Upload({ onCreated, busy }) {
         <button type="submit" disabled={busy}>검사 실행</button>
       </form>
       <p className="hint">lockfileVersion 2 또는 3만 지원합니다. zip 등 다른 파일은 받지 않습니다.</p>
+      <p className="hint">검사가 끝나면 올린 파일 원본은 서버에서 삭제됩니다. 검사 결과(패키지 목록·SBOM 포함)는 결과 확인을 위해 남습니다.</p>
 
       <form className="manual" onSubmit={(e) => { e.preventDefault(); if (manual.trim()) onCreated(manual.trim()) }}>
         <input value={manual} onChange={(e) => setManual(e.target.value)}

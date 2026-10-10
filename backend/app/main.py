@@ -1,9 +1,22 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from .db import connect
 
-app = FastAPI(title="OSS Close-UP API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app):
+    # 끝난 검사의 업로드 원본을 주기적으로 정리한다(소개서 3.10).
+    from .upload_cleanup import start_cleanup
+    stop = start_cleanup()
+    yield
+    if stop is not None:
+        stop.set()
+
+
+app = FastAPI(title="OSS Close-UP API", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health/live")

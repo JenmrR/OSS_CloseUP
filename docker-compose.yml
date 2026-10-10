@@ -32,6 +32,8 @@ services:
       DB_NAME: ${POSTGRES_DB}
       SCAN_STORAGE_ROOT: /work/uploads
       SCAN_RESULTS_ROOT: /work/results    # SBOM 다운로드용 (읽기 전용)
+      UPLOAD_RETENTION_SECONDS: "0"          # 검사가 끝나면 업로드 원본을 바로 삭제(소개서 3.10)
+      UPLOAD_CLEANUP_INTERVAL_SECONDS: "60"   # 정리 주기. 0이면 자동 정리 끔
       # GITHUB_TOKEN은 backend에 주지 않음 (검사를 하는 worker에만 3단계에서 전달)
     depends_on:
       db:
