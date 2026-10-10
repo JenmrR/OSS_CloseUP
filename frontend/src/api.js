@@ -70,6 +70,10 @@ export async function getSbomInfo(scanId) {
   }
 }
 
+// AI 설명. 생성되지 않았으면 서버가 status:'not_generated'로 돌려준다.
+export const getAiReport = (scanId) => request(`/scans/${scanId}/ai/report`)
+export const getAiFindings = (scanId) => request(`/scans/${scanId}/ai/findings`)
+
 export const sbomDownloadUrl = (scanId) => `${BASE}/scans/${scanId}/sbom`
 
 export async function downloadSbom(scanId) {
