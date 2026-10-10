@@ -3,16 +3,10 @@ import {
   createScan, getScan, getPackages, getMaintenance,
   getFindings, getSbomInfo, downloadSbom,
 } from './api'
-
-// 검사 단계 표시 순서. tool_status에 없는 단계는 '대기'로 둔다.
-const STAGES = [
-  ['trivy', 'Trivy 취약점 검사'],
-  ['osv', 'OSV-Scanner 취약점 검사'],
-  ['syft', 'Syft SBOM·라이선스'],
-  ['package_storage', '패키지 저장'],
-  ['normalization', '결과 정규화'],
-  ['github', '유지보수 정보 조회'],
-]
+import {
+  STAGES, ACTIVE, stageProgress, computeProgress,
+  uniqueFixVersions, licenseState, vulnScanFailed,
+} from './display'
 
 const STATUS_LABEL = {
   pending: '대기', queued: '대기', running: '진행 중', completed: '완료',
@@ -20,7 +14,6 @@ const STATUS_LABEL = {
 }
 
 const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
-const ACTIVE = new Set(['queued', 'running'])
 
 const label = (status) => STATUS_LABEL[status] || status || '대기'
 const cls = (status) => `badge badge-${status || 'pending'}`
@@ -45,47 +38,67 @@ function shortVersion(raw) {
   return match ? match[1] : String(raw).split('\n')[0]
 }
 
-function stageProgress(stage) {
-  if (!stage || typeof stage !== 'object') return null
-  const done = stage.completed ?? stage.processed ?? stage.progress
-  const total = stage.total ?? stage.count
-  if (typeof done === 'number' && typeof total === 'number' && total > 0) {
-    return { done, total, percent: Math.round((done / total) * 100) }
-  }
-  return null
-}
-
+// 진행 바 한 줄 + 접어 둔 단계별 상세.
 function Progress({ scan }) {
-  if (!scan) return null
+  const [open, setOpen] = useState(false)
+  const progress = computeProgress(scan)
+  if (!progress) return null
   const toolStatus = scan.tool_status || {}
+  const failedAll = progress.status === 'failed'
+  const partial = progress.status === 'partial' || (progress.failed.length > 0 && !failedAll)
+  const active = ACTIVE.has(progress.status)
+
+  let message
+  if (failedAll) message = '검사에 실패했습니다. 파일을 다시 올려 검사해 주세요.'
+  else if (active) message = progress.current
+    ? `${progress.current.name} 중${progress.current.detail ? ` (${progress.current.detail.done}/${progress.current.detail.total})` : ''}`
+    : '검사를 준비하고 있습니다.'
+  else if (partial) message = '검사가 끝났지만 일부 단계를 확인하지 못했습니다.'
+  else message = '검사가 끝났습니다.'
+
   return (
     <section className="card">
       <div className="card-head">
         <h2>검사 진행</h2>
-        <span className={cls(scan.status)}>{label(scan.status)}</span>
+        <span className={cls(progress.status)}>{label(progress.status)}</span>
       </div>
-      <ul className="stages">
-        {STAGES.map(([key, name]) => {
-          const stage = toolStatus[key] || {}
-          const progress = stageProgress(stage)
-          return (
-            <li key={key}>
-              <span className="stage-name">{name}</span>
-              <span className={cls(stage.status)}>{label(stage.status)}</span>
-              {progress && (
-                <span className="stage-progress">
-                  <span className="bar"><span style={{ width: `${progress.percent}%` }} /></span>
-                  {progress.done} / {progress.total}개
-                </span>
-              )}
-              {stage.error_message && <span className="error-text">{stage.error_message}</span>}
-            </li>
-          )
-        })}
-      </ul>
-      <p className="hint">
-        일부 단계가 실패해도 나머지 결과는 표시됩니다. 실패한 항목은 "확인 불가"로 구분합니다.
-      </p>
+      <div className="stage-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100}
+        aria-valuenow={progress.percent} aria-label="검사 진행률">
+        <span className="bar" style={{ flex: 1 }}>
+          <span style={{
+            width: `${progress.percent}%`,
+            ...(failedAll ? { background: '#c62828' } : partial ? { background: '#d9480f' } : {}),
+          }} />
+        </span>
+        <strong>{progress.percent}%</strong>
+      </div>
+      <p className={failedAll ? 'error-text' : 'muted'}>{message}</p>
+      {progress.failed.length > 0 && (
+        <p className="error-text">확인하지 못한 단계: {progress.failed.join(', ')}. 이 단계의 결과는 "확인 불가"로 표시됩니다.</p>
+      )}
+      {progress.workerReason && (
+        <p className="error-text">검사 시작 단계에서 실패했습니다 ({progress.workerReason}).</p>
+      )}
+
+      <button type="button" className="link" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        {open ? '자세히 닫기 ▴' : '자세히 보기 ▾'}
+      </button>
+      {open && (
+        <ul className="stages">
+          {STAGES.map(([key, name]) => {
+            const stage = toolStatus[key] || {}
+            const detail = stageProgress(stage)
+            return (
+              <li key={key}>
+                <span className="stage-name">{name}</span>
+                <span className={cls(stage.status)}>{label(stage.status)}</span>
+                {detail && <span className="muted">{detail.done} / {detail.total}개</span>}
+                {stage.error_message && <span className="error-text">{stage.error_message}</span>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </section>
   )
 }
@@ -215,7 +228,8 @@ function Packages({ data }) {
               <td>{item.relationship === 'direct' ? '직접' : item.relationship === 'indirect' ? '간접' : '확인 불가'}</td>
               <td>{item.licenses && item.licenses.length
                 ? item.licenses.join(', ')
-                : <span className="muted">정보 없음</span>}</td>
+                : <span className="muted">정보 없음</span>}
+                {licenseState(item.licenses) === 'review' && <span className="flag flag-warn">확인 필요</span>}</td>
               <td className="mono path">{item.lockfile_path}</td>
             </tr>
           ))}
@@ -225,24 +239,74 @@ function Packages({ data }) {
   )
 }
 
-function Findings({ data }) {
+// 라이선스 탭: 확인이 필요한 패키지만 모아서 보여준다. 법적 판정은 하지 않는다.
+function Licenses({ data }) {
+  if (!data) return <p className="muted">불러오는 중…</p>
+  const status = (data.package_storage || {}).status
+  const external = (data.items || []).filter((item) => item.relationship !== 'root')
+  if (status !== 'completed' && external.length === 0) {
+    return <p className="muted">패키지 저장이 아직 끝나지 않았습니다 ({label(status)}). 라이선스 정보가 없다는 뜻이 아닙니다.</p>
+  }
+  const review = external.filter((item) => licenseState(item.licenses) === 'review')
+  const unknown = external.filter((item) => licenseState(item.licenses) === 'unknown')
+  const rows = [...review, ...unknown]
+  return (
+    <>
+      <p className="summary">
+        확인 필요 {review.length}개 · 정보 없음 {unknown.length}개 · 그 외 {external.length - rows.length}개
+      </p>
+      {rows.length === 0 ? (
+        <p className="muted">따로 확인을 안내할 라이선스가 없습니다. 패키지에 선언된 정보 기준이며, 법적 검토를 대신하지 않습니다.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr><th>패키지</th><th>버전</th><th>구분</th><th>선언 라이선스</th><th>안내</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((item) => (
+              <tr key={item.package_id}>
+                <td className="mono">{item.name}</td>
+                <td className="mono">{item.installed_version || '—'}</td>
+                <td>{item.relationship === 'direct' ? '직접' : item.relationship === 'indirect' ? '간접' : '확인 불가'}</td>
+                <td>{(item.licenses || []).join(', ') || <span className="muted">정보 없음</span>}</td>
+                <td>{licenseState(item.licenses) === 'review'
+                  ? <><span className="flag flag-warn">확인 필요</span> 배포 방식에 따라 지켜야 할 의무가 있을 수 있습니다.</>
+                  : <span className="muted">선언된 라이선스를 찾지 못했습니다.</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="hint">패키지에 선언된 라이선스 기준입니다. 위험하다는 판정이 아니라 확인이 필요하다는 안내입니다.</p>
+    </>
+  )
+}
+
+function Findings({ data, scan }) {
   if (!data) return <p className="muted">불러오는 중…</p>
   const status = (data.normalization || {}).status
   const items = data.items || []
   if (status !== 'completed' && items.length === 0) {
     return <p className="muted">취약점 정규화가 아직 연결되지 않았습니다 ({label(status)}). 취약점 0건이라는 뜻이 아닙니다.</p>
   }
+  const scanFailed = vulnScanFailed(scan)
+  if (items.length === 0) {
+    return scanFailed
+      ? <p className="error-text">취약점 검사 일부가 실패했습니다. 발견된 항목이 없는 것처럼 보여도 확인하지 못한 취약점이 있을 수 있습니다.</p>
+      : <p className="muted">취약점 검사가 정상 완료되었고, 알려진 취약점은 발견되지 않았습니다. 코드에 문제가 없다는 보장은 아닙니다.</p>
+  }
   const counts = SEVERITY_ORDER.map((level) => [level, items.filter((i) => i.severity === level).length])
     .filter(([, n]) => n > 0)
   return (
     <>
+      {scanFailed && <p className="error-text">취약점 검사 일부가 실패해 이 목록이 전부가 아닐 수 있습니다.</p>}
       <p className="summary">
         Finding {items.length}건
         {counts.map(([level, n]) => <span key={level} className={`sev sev-${level}`}>{level} {n}</span>)}
       </p>
       <table>
         <thead>
-          <tr><th>식별자</th><th>심각도</th><th>유형</th><th>출처</th><th>영향 패키지</th><th>조치 우선순위</th></tr>
+          <tr><th>식별자</th><th>심각도</th><th>출처</th><th>영향 패키지</th><th>조치 우선순위</th></tr>
         </thead>
         <tbody>
           {items.map((item) => {
@@ -255,27 +319,31 @@ function Findings({ data }) {
                   {item.canonical_id || ids.map((x) => (typeof x === 'string' ? x : x.value || x.id)).filter(Boolean).join(', ') || item.finding_key}
                   {item.manual_review_required && <span className="flag flag-warn">수동 확인</span>}
                 </td>
-                <td><span className={`sev sev-${item.severity || 'UNKNOWN'}`}>{item.severity || 'UNKNOWN'}</span></td>
-                <td>{item.type === 'vulnerability' ? '취약점' : item.type === 'license' ? '라이선스' : '유지보수'}</td>
-                <td className="muted">{(item.source_tools || []).join(', ') || '—'}</td>
+                <td style={{ whiteSpace: 'nowrap' }}><span className={`sev sev-${item.severity || 'UNKNOWN'}`}>{item.severity || 'UNKNOWN'}</span></td>
+                <td className="muted" style={{ whiteSpace: 'nowrap' }} title={(item.source_tools || []).join(', ')}>
+                  {(item.source_tools || []).length ? `엔진 ${item.source_tools.length}개` : '—'}
+                </td>
                 <td>
                   {packages.length === 0 ? <span className="muted">—</span> : (
                     <ul className="pkg-list">
-                      {packages.map((p) => (
-                        <li key={p.package_id}>
-                          <span className="mono">{p.name}@{p.installed_version}</span>
-                          <span className="muted"> {p.relationship === 'direct' ? '직접' : '간접'}</span>
-                          {p.recommended_fixed_version
-                            ? <span className="fix">→ {p.recommended_fixed_version}</span>
-                            : (p.fixed_version_candidates || []).length === 0
-                              ? <span className="muted"> 수정 정보 확인 필요</span>
-                              : <span className="muted"> 수정 후보 {(p.fixed_version_candidates || []).length}개</span>}
-                        </li>
-                      ))}
+                      {packages.map((p) => {
+                        const fixes = uniqueFixVersions(p.fixed_version_candidates)
+                        return (
+                          <li key={p.package_id}>
+                            <span className="mono">{p.name}@{p.installed_version}</span>
+                            <span className="muted"> {p.relationship === 'direct' ? '직접' : '간접'}</span>
+                            {p.recommended_fixed_version
+                              ? <span className="fix">→ {p.recommended_fixed_version}</span>
+                              : fixes.length === 0
+                                ? <span className="muted"> 수정 정보 확인 필요</span>
+                                : <span className="muted"> 수정 후보 {fixes.join(', ')} (호환성 확인 필요)</span>}
+                          </li>
+                        )
+                      })}
                     </ul>
                   )}
                 </td>
-                <td>{priorities.length ? priorities.join(', ') : <span className="muted">산정 전</span>}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>{priorities.length ? priorities.join(', ') : <span className="muted">산정 전</span>}</td>
               </tr>
             )
           })}
@@ -405,12 +473,14 @@ export default function App() {
           <section className="card">
             <nav className="tabs">
               <button className={tab === 'packages' ? 'on' : ''} onClick={() => setTab('packages')}>패키지</button>
-              <button className={tab === 'findings' ? 'on' : ''} onClick={() => setTab('findings')}>취약점·라이선스</button>
+              <button className={tab === 'findings' ? 'on' : ''} onClick={() => setTab('findings')}>취약점</button>
+              <button className={tab === 'licenses' ? 'on' : ''} onClick={() => setTab('licenses')}>라이선스</button>
               <button className={tab === 'maintenance' ? 'on' : ''} onClick={() => setTab('maintenance')}>유지보수</button>
             </nav>
             <div className="tab-body">
               {tab === 'packages' && <Packages data={packages} />}
-              {tab === 'findings' && <Findings data={findings} />}
+              {tab === 'findings' && <Findings data={findings} scan={scan} />}
+              {tab === 'licenses' && <Licenses data={packages} />}
               {tab === 'maintenance' && <Maintenance data={maintenance} />}
             </div>
           </section>
