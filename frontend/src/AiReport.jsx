@@ -5,20 +5,22 @@ import { aiReportView } from './display'
 // 전체 AI 보고서 자리. 설명 조회가 실패해도 검사 결과 화면은 막지 않는다.
 // 기본 펼침 + 접기. 본문 구조(요약·먼저 볼 항목·다음 행동)는 LLM 연동 때 채운다.
 export default function AiReport({ scanId, scanStatus }) {
-  const [state, setState] = useState({ loading: true })
+  // 응답을 요청 키와 함께 저장하고, 키가 다르면(새 요청 중) 불러오는 중으로 본다.
+  // effect 안에서 상태를 바로 바꾸지 않아 불필요한 다시 그리기를 피한다.
+  const requestKey = `${scanId}:${scanStatus}`
+  const [result, setResult] = useState({ key: null })
   const [open, setOpen] = useState(true)
 
   useEffect(() => {
     if (!scanId) return undefined
     let cancelled = false
-    setState({ loading: true })
     getAiReport(scanId)
-      .then((data) => { if (!cancelled) setState({ data }) })
-      .catch((error) => { if (!cancelled) setState({ error }) })
+      .then((data) => { if (!cancelled) setResult({ key: requestKey, data }) })
+      .catch((error) => { if (!cancelled) setResult({ key: requestKey, error }) })
     return () => { cancelled = true }
-  }, [scanId, scanStatus])
+  }, [scanId, requestKey])
 
-  const view = aiReportView(state)
+  const view = aiReportView(result.key === requestKey ? result : { loading: true })
   return (
     <section className="card">
       <div className="card-head">

@@ -6,8 +6,10 @@ import {
 import {
   STAGES, ACTIVE, stageProgress, computeProgress,
   uniqueFixVersions, licenseState, vulnScanFailed,
+  findingLabel, parseRoute, routeHash,
 } from './display'
 import AiReport from './AiReport'
+import FindingDetail from './FindingDetail'
 
 const STATUS_LABEL = {
   pending: '대기', queued: '대기', running: '진행 중', completed: '완료',
@@ -284,7 +286,7 @@ function Licenses({ data }) {
   )
 }
 
-function Findings({ data, scan }) {
+function Findings({ data, scan, onOpen }) {
   if (!data) return <p className="muted">불러오는 중…</p>
   const status = (data.normalization || {}).status
   const items = data.items || []
@@ -312,13 +314,14 @@ function Findings({ data, scan }) {
         </thead>
         <tbody>
           {items.map((item) => {
-            const ids = Array.isArray(item.identifiers) ? item.identifiers : []
             const packages = Array.isArray(item.packages) ? item.packages : []
             const priorities = [...new Set(packages.map((p) => p.priority).filter(Boolean))]
             return (
-              <tr key={item.finding_id}>
+              <tr key={item.finding_id} onClick={() => onOpen(item.finding_id)}
+                onKeyDown={(e) => { if (e.key === 'Enter') onOpen(item.finding_id) }}
+                tabIndex={0} style={{ cursor: 'pointer' }} title="눌러서 상세 보기">
                 <td className="mono">
-                  {item.canonical_id || ids.map((x) => (typeof x === 'string' ? x : x.value || x.id)).filter(Boolean).join(', ') || item.finding_key}
+                  {findingLabel(item)}
                   {item.manual_review_required && <span className="flag flag-warn">수동 확인</span>}
                 </td>
                 <td style={{ whiteSpace: 'nowrap' }}><span className={`sev sev-${item.severity || 'UNKNOWN'}`}>{item.severity || 'UNKNOWN'}</span></td>
@@ -352,7 +355,7 @@ function Findings({ data, scan }) {
         </tbody>
       </table>
       <p className="hint">
-        심각도는 검사 엔진 값을 그대로 씁니다. 조치 우선순위는 별도 규칙으로 계산하며 심각도를 낮추지 않습니다.
+        행을 누르면 고치는 방법과 근거를 볼 수 있습니다. 심각도는 검사 엔진 값을 그대로 씁니다. 조치 우선순위는 별도 규칙으로 계산하며 심각도를 낮추지 않습니다.
       </p>
     </>
   )
@@ -395,7 +398,9 @@ function Maintenance({ data }) {
 }
 
 export default function App() {
-  const [scanId, setScanId] = useState('')
+  const [scanId, setScanId] = useState(() => parseRoute(window.location.hash).scanId || '')
+  const [detailId, setDetailId] = useState(() => parseRoute(window.location.hash).findingId)
+  const listScroll = useRef(0)
   const [scan, setScan] = useState(null)
   const [packages, setPackages] = useState(null)
   const [findings, setFindings] = useState(null)
@@ -444,7 +449,44 @@ export default function App() {
     return () => { generation.current = currentGeneration + 1; clearTimeout(scheduledTimer) }
   }, [scanId, reload])
 
+  // 뒤로 가기·앞으로 가기·주소 직접 수정 시 상세 위치를 따라간다
+  useEffect(() => {
+    const sync = () => setDetailId(parseRoute(window.location.hash).findingId)
+    window.addEventListener('popstate', sync)
+    window.addEventListener('hashchange', sync)
+    return () => { window.removeEventListener('popstate', sync); window.removeEventListener('hashchange', sync) }
+  }, [])
+
+  // 목록으로 돌아오면 보던 위치로 스크롤을 되돌린다
+  useEffect(() => {
+    if (detailId) window.scrollTo(0, 0)
+    else requestAnimationFrame(() => window.scrollTo(0, listScroll.current))
+  }, [detailId])
+
+  function openDetail(id) {
+    listScroll.current = window.scrollY
+    window.history.pushState({ fromList: true }, '', routeHash(scanId, id))
+    setDetailId(id)
+  }
+
+  function closeDetail() {
+    setTab('findings')
+    if (window.history.state && window.history.state.fromList) {
+      window.history.back()
+    } else {
+      window.history.replaceState(null, '', routeHash(scanId) || window.location.pathname)
+      setDetailId(null)
+    }
+  }
+
+  function goToDetail(id) {
+    window.history.replaceState(window.history.state, '', routeHash(scanId, id))
+    setDetailId(id)
+  }
+
   function start(id) {
+    window.history.replaceState(null, '', routeHash(id) || window.location.pathname)
+    setDetailId(null)
     generation.current++
     setReload((value) => value + 1)
     if (timer.current) clearTimeout(timer.current)
@@ -453,6 +495,8 @@ export default function App() {
   }
 
   const busy = scan ? ACTIVE.has(scan.status) : false
+  const findingItems = (findings && findings.items) || []
+  const detailIndex = detailId ? findingItems.findIndex((f) => f.finding_id === detailId) : -1
 
   return (
     <div className="app">
@@ -461,12 +505,34 @@ export default function App() {
         <p>오픈소스 의존성의 취약점·라이선스·유지보수 상태를 한 화면에서 확인합니다.</p>
       </header>
 
-      <Upload onCreated={start} busy={busy} />
       {error && <div role="alert" className="error-text">{error}
         <button onClick={() => start(scanId)}>다시 불러오기</button>
       </div>}
 
-      {scanId && (
+      {/* 취약점 상세: 목록 대신 전체 화면으로 보여준다 */}
+      {scanId && detailId && (
+        detailIndex >= 0 ? (
+          <FindingDetail
+            key={detailId}
+            scanId={scanId}
+            finding={findingItems[detailIndex]}
+            index={detailIndex}
+            total={findingItems.length}
+            onBack={closeDetail}
+            onPrev={detailIndex > 0 ? () => goToDetail(findingItems[detailIndex - 1].finding_id) : null}
+            onNext={detailIndex < findingItems.length - 1 ? () => goToDetail(findingItems[detailIndex + 1].finding_id) : null}
+          />
+        ) : (
+          <section className="card">
+            <button type="button" onClick={closeDetail}>← 목록으로</button>
+            <p className="muted">{findings ? '이 검사에서 해당 취약점을 찾을 수 없습니다.' : '불러오는 중…'}</p>
+          </section>
+        )
+      )}
+
+      {!detailId && <Upload onCreated={start} busy={busy} />}
+
+      {scanId && !detailId && (
         <>
           <p className="scan-id">검사 ID <span className="mono">{scanId}</span></p>
           <Progress scan={scan} />
@@ -482,7 +548,7 @@ export default function App() {
             </nav>
             <div className="tab-body">
               {tab === 'packages' && <Packages data={packages} />}
-              {tab === 'findings' && <Findings data={findings} scan={scan} />}
+              {tab === 'findings' && <Findings data={findings} scan={scan} onOpen={openDetail} />}
               {tab === 'licenses' && <Licenses data={packages} />}
               {tab === 'maintenance' && <Maintenance data={maintenance} />}
             </div>

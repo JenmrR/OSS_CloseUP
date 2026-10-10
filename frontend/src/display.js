@@ -110,3 +110,91 @@ export function vulnScanFailed(scan) {
   const toolStatus = (scan && scan.tool_status) || {}
   return VULN_STAGES.some((key) => FAILED.has((toolStatus[key] || {}).status))
 }
+
+// ── 취약점 상세: 고치는 방법 ──────────────────────────────
+
+const SEMVER = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/
+
+export function parseSemver(value) {
+  const m = SEMVER.exec(String(value ?? '').trim())
+  return m ? { nums: [Number(m[1]), Number(m[2]), Number(m[3])], pre: m[4] || null } : null
+}
+
+// a<b: -1, a=b: 0, a>b: 1, 비교 불가: null. 정식 버전이 같은 숫자의 pre-release보다 크다.
+export function compareSemver(a, b) {
+  const x = parseSemver(a)
+  const y = parseSemver(b)
+  if (!x || !y) return null
+  for (let i = 0; i < 3; i += 1) {
+    if (x.nums[i] !== y.nums[i]) return x.nums[i] < y.nums[i] ? -1 : 1
+  }
+  if (x.pre === y.pre) return 0
+  if (!x.pre) return 1
+  if (!y.pre) return -1
+  return x.pre < y.pre ? -1 : 1
+}
+
+// OSV 영향 범위(introduced ~ fixed)에 설치 버전이 들어가는 수정 버전만 고른다.
+// 추측이 아니라 범위 데이터로 확인되는 값만 쓴다. 확인할 수 없으면 null.
+export function rangeFixFor(installed, candidates) {
+  if (!parseSemver(installed)) return null
+  const matches = []
+  for (const c of candidates || []) {
+    const range = c && c.range
+    if (!range || !Array.isArray(range.events) || (range.type && range.type !== 'SEMVER')) continue
+    let introduced = null
+    for (const event of range.events) {
+      if (event && event.introduced !== undefined) {
+        introduced = String(event.introduced)
+      } else if (event && event.fixed !== undefined && introduced !== null) {
+        const fixed = String(event.fixed)
+        const afterStart = introduced === '0' || compareSemver(installed, introduced) >= 0
+        const beforeFix = compareSemver(installed, fixed) === -1
+        if (afterStart && beforeFix && parseSemver(fixed)) matches.push(fixed)
+        introduced = null
+      }
+    }
+  }
+  if (matches.length === 0) return null
+  // 여러 권고가 있으면 모두를 만족하는 가장 높은 값
+  return matches.sort((a, b) => compareSemver(a, b)).at(-1)
+}
+
+// 복사용 명령어에 들어갈 값은 npm 이름·버전 형식일 때만 쓴다(이상한 문자열이 명령어에 섞이지 않게).
+const NPM_NAME = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/
+
+// 패키지별 고치는 방법. kind: direct | indirect | none | unverified
+export function fixGuide(pkg) {
+  const candidates = uniqueFixVersions(pkg && pkg.fixed_version_candidates)
+  if (candidates.length === 0) return { kind: 'none', candidates }
+  const target = rangeFixFor(pkg.installed_version, pkg.fixed_version_candidates)
+  const safe = NPM_NAME.test(pkg.name || '') && parseSemver(target)
+  if (!target || !safe) return { kind: 'unverified', candidates }
+  if (pkg.relationship === 'direct') {
+    return { kind: 'direct', target, candidates, commands: [`npm install ${pkg.name}@${target}`] }
+  }
+  if (pkg.relationship === 'indirect') {
+    return { kind: 'indirect', target, candidates, commands: [`npm ls ${pkg.name}`, `npm update ${pkg.name}`] }
+  }
+  return { kind: 'unverified', candidates }
+}
+
+export function findingLabel(item) {
+  const ids = Array.isArray(item && item.identifiers) ? item.identifiers : []
+  return (item && item.canonical_id)
+    || ids.map((x) => (typeof x === 'string' ? x : x.value || x.id)).filter(Boolean).join(', ')
+    || (item && item.finding_key) || '—'
+}
+
+// ── 주소(#) 기반 화면 위치: 새로고침·뒤로 가기·주소 공유용 ──
+const ROUTE = /^#\/scan\/([0-9a-fA-F-]{36})(?:\/finding\/([0-9a-fA-F-]{36}))?$/
+
+export function parseRoute(hash) {
+  const m = ROUTE.exec(hash || '')
+  return m ? { scanId: m[1], findingId: m[2] || null } : { scanId: null, findingId: null }
+}
+
+export function routeHash(scanId, findingId) {
+  if (!scanId) return ''
+  return findingId ? `#/scan/${scanId}/finding/${findingId}` : `#/scan/${scanId}`
+}
