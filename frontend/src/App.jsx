@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   createScan, getScan, getPackages, getMaintenance,
-  getFindings, getSbomInfo, sbomDownloadUrl,
+  getFindings, getSbomInfo, downloadSbom,
 } from './api'
 
 // 검사 단계 표시 순서. tool_status에 없는 단계는 '대기'로 둔다.
@@ -139,6 +139,23 @@ function Upload({ onCreated, busy }) {
 }
 
 function Sbom({ scanId, info }) {
+  const [error, setError] = useState(null)
+  const [downloading, setDownloading] = useState(false)
+  async function download() {
+    setError(null); setDownloading(true)
+    try {
+      const blob = await downloadSbom(scanId)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url; link.download = info.filename
+      document.body.appendChild(link); link.click(); link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDownloading(false)
+    }
+  }
   if (!info) return null
   if (!info.available) {
     const status = info.syft && info.syft.status
@@ -146,7 +163,7 @@ function Sbom({ scanId, info }) {
       <section className="card">
         <div className="card-head"><h2>SBOM</h2></div>
         <p className="muted">
-          아직 생성되지 않았습니다 (Syft: {label(status)}).
+          다운로드 가능한 최신 성공 SBOM이 없습니다 (Syft: {label(status)}).
           패키지가 0개라는 뜻이 아닙니다.
         </p>
         {info.syft && info.syft.error_message && <p className="error-text">{info.syft.error_message}</p>}
@@ -157,9 +174,10 @@ function Sbom({ scanId, info }) {
   return (
     <section className="card">
       <div className="card-head"><h2>SBOM</h2></div>
-      <a className="button" href={sbomDownloadUrl(scanId)} download={info.filename}>
-        SPDX JSON 내려받기
-      </a>
+      <button onClick={download} disabled={downloading}>
+        {downloading ? '내려받는 중…' : 'SPDX JSON 내려받기'}
+      </button>
+      {error && <p role="alert" className="error-text">{error} 다시 내려받기를 시도해 주세요.</p>}
       <dl className="meta">
         <div><dt>크기</dt><dd>{size} KB</dd></div>
         <div><dt>생성 도구</dt><dd>Syft {shortVersion(info.syft && info.syft.tool_version) || '—'}</dd></div>
@@ -250,7 +268,7 @@ function Findings({ data }) {
                           {p.recommended_fixed_version
                             ? <span className="fix">→ {p.recommended_fixed_version}</span>
                             : (p.fixed_version_candidates || []).length === 0
-                              ? <span className="muted"> 수정 버전 없음</span>
+                              ? <span className="muted"> 수정 정보 확인 필요</span>
                               : <span className="muted"> 수정 후보 {(p.fixed_version_candidates || []).length}개</span>}
                         </li>
                       ))}
@@ -317,40 +335,48 @@ export default function App() {
   const [error, setError] = useState(null)
   const timer = useRef(null)
 
-  const loadResults = useCallback(async (id) => {
-    const [p, f, m, s] = await Promise.allSettled([
-      getPackages(id), getFindings(id), getMaintenance(id), getSbomInfo(id),
-    ])
-    if (p.status === 'fulfilled') setPackages(p.value)
-    if (f.status === 'fulfilled') setFindings(f.value)
-    if (m.status === 'fulfilled') setMaintenance(m.value)
-    if (s.status === 'fulfilled') setSbom(s.value)
-  }, [])
+  const [reload, setReload] = useState(0)
+  const generation = useRef(0)
 
   useEffect(() => {
     if (!scanId) return undefined
-    let cancelled = false
+    let scheduledTimer
+    const currentGeneration = ++generation.current
+    const stale = () => generation.current !== currentGeneration
 
     async function tick() {
       try {
         const current = await getScan(scanId)
-        if (cancelled) return
+        if (stale()) return
         setScan(current)
-        setError(null)
-        await loadResults(scanId)
+        const results = await Promise.allSettled([
+          getPackages(scanId), getFindings(scanId), getMaintenance(scanId), getSbomInfo(scanId),
+        ])
+        if (stale()) return
+        const setters = [setPackages, setFindings, setMaintenance, setSbom]
+        const names = ['패키지', '취약점', '유지보수', 'SBOM']
+        const errors = []
+        results.forEach((result, index) => {
+          setters[index](result.status === 'fulfilled' ? result.value : null)
+          if (result.status === 'rejected') errors.push(`${names[index]}: ${result.reason.message}`)
+        })
+        setError(errors.length ? errors.join(' / ') : null)
         if (ACTIVE.has(current.status)) {
-          timer.current = setTimeout(tick, 3000)
+          scheduledTimer = setTimeout(tick, 3000)
+          timer.current = scheduledTimer
         }
       } catch (err) {
-        if (!cancelled) setError(err.message)
+        if (!stale()) setError(err.message)
       }
     }
 
     tick()
-    return () => { cancelled = true; if (timer.current) clearTimeout(timer.current) }
-  }, [scanId, loadResults])
+    return () => { generation.current = currentGeneration + 1; clearTimeout(scheduledTimer) }
+  }, [scanId, reload])
 
   function start(id) {
+    generation.current++
+    setReload((value) => value + 1)
     if (timer.current) clearTimeout(timer.current)
     setScan(null); setPackages(null); setFindings(null); setMaintenance(null); setSbom(null)
     setError(null); setScanId(id)
@@ -366,13 +392,15 @@ export default function App() {
       </header>
 
       <Upload onCreated={start} busy={busy} />
-      {error && <p className="error-text">{error}</p>}
+      {error && <div role="alert" className="error-text">{error}
+        <button onClick={() => start(scanId)}>다시 불러오기</button>
+      </div>}
 
       {scanId && (
         <>
           <p className="scan-id">검사 ID <span className="mono">{scanId}</span></p>
           <Progress scan={scan} />
-          <Sbom scanId={scanId} info={sbom} />
+          <Sbom key={`${scanId}-${reload}`} scanId={scanId} info={sbom} />
 
           <section className="card">
             <nav className="tabs">

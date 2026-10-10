@@ -37,9 +37,26 @@ export function createScan(packageJson, packageLock) {
 }
 
 export const getScan = (scanId) => request(`/scans/${scanId}`)
-export const getPackages = (scanId) => request(`/scans/${scanId}/packages?limit=500`)
-export const getMaintenance = (scanId) => request(`/scans/${scanId}/maintenance?limit=500`)
-export const getFindings = (scanId) => request(`/scans/${scanId}/findings?limit=500`)
+// 서버의 페이지 상한은 유지하고 전체 페이지를 모은다. 일부 페이지만 성공하면 오류로 표시한다.
+async function getAll(scanId, resource) {
+  const items = []
+  let page
+  do {
+    page = await request(`/scans/${scanId}/${resource}?limit=500&offset=${items.length}`)
+    if (!Array.isArray(page.items) || !Number.isInteger(page.total) || page.total < 0) {
+      throw new Error('목록 응답이 올바르지 않습니다. 다시 불러와 주세요.')
+    }
+    if (page.items.length === 0 && items.length < page.total) {
+      throw new Error('전체 목록을 가져오지 못했습니다. 다시 불러와 주세요.')
+    }
+    items.push(...page.items)
+  } while (items.length < page.total)
+  return { ...page, offset: 0, items }
+}
+
+export const getPackages = (scanId) => getAll(scanId, 'packages')
+export const getMaintenance = (scanId) => getAll(scanId, 'maintenance')
+export const getFindings = (scanId) => getAll(scanId, 'findings')
 
 // SBOM 미생성은 404로 오지만 오류가 아니다. available:false 로 바꿔서 돌려준다.
 export async function getSbomInfo(scanId) {
@@ -54,3 +71,12 @@ export async function getSbomInfo(scanId) {
 }
 
 export const sbomDownloadUrl = (scanId) => `${BASE}/scans/${scanId}/sbom`
+
+export async function downloadSbom(scanId) {
+  const response = await fetch(sbomDownloadUrl(scanId))
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(describe(body, response.status))
+  }
+  return response.blob()
+}

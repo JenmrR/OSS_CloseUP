@@ -29,17 +29,19 @@ HASH_VERIFY_MAX_BYTES = 64 * 1024 * 1024
 ALLOWED_MEDIA_TYPES = {"application/json", "application/spdx+json"}
 DEFAULT_MEDIA_TYPE = "application/json"
 
-# 최신 성공 도구 실행의 SBOM을 우선한다. tool_run_id가 비어 있는 과거 행도 버리지 않는다.
+# 최신 Syft 실행에 연결된 산출물만 조회한다. 실패 후 과거 성공 파일로 대체하지 않는다.
 SBOM_ARTIFACT_SQL = """
 SELECT a.artifact_id, a.storage_key, a.sha256, a.size_bytes, a.media_type, a.created_at,
        r.tool_name, r.attempt_no, r.status AS tool_run_status
   FROM scan_artifacts a
-  LEFT JOIN scan_tool_runs r
+  JOIN scan_tool_runs r
          ON r.scan_id = a.scan_id AND r.tool_run_id = a.tool_run_id
  WHERE a.scan_id = %s AND a.kind = 'sbom' AND a.deleted_at IS NULL
- ORDER BY (r.status = 'completed') DESC NULLS LAST,
-          r.attempt_no DESC NULLS LAST,
-          a.created_at DESC
+   AND lower(r.tool_name) = 'syft'
+   AND r.tool_run_id = (SELECT tool_run_id FROM scan_tool_runs
+       WHERE scan_id = a.scan_id AND lower(tool_name) = 'syft'
+       ORDER BY attempt_no DESC LIMIT 1)
+ ORDER BY a.created_at DESC, a.artifact_id DESC
  LIMIT 1
 """
 
@@ -82,6 +84,16 @@ def _lookup(scan_id: UUID):
     return scan, artifact, run
 
 
+def _available(scan, artifact, run):
+    return bool(
+        scan["status"] in {"completed", "partial"}
+        and run and run["status"] == "completed"
+        and artifact and artifact["tool_run_status"] == "completed"
+        and artifact["attempt_no"] == run["attempt_no"]
+        and artifact["tool_name"].lower() == "syft"
+    )
+
+
 def _resolve(storage_key: str, scan_id: UUID) -> Path:
     """storage_key를 결과 루트 안쪽으로만 해석한다. 밖으로 나가면 거부."""
     if "\\" in storage_key or "\x00" in storage_key:
@@ -117,7 +129,7 @@ def _not_available(scan, run):
             "reason": "sbom_not_available",
             "scan_status": scan["status"],
             "syft": _syft_state(run),
-            "message": "SBOM이 아직 생성되지 않았습니다. 패키지가 0개라는 뜻이 아닙니다.",
+            "message": "다운로드 가능한 최신 성공 SBOM이 없습니다. 검사 상태를 확인해 주세요. 패키지가 0개라는 뜻이 아닙니다.",
         },
     )
 
@@ -128,7 +140,7 @@ def sbom_info(scan_id: UUID):
     scan, artifact, run = _lookup(scan_id)
     if scan is None:
         raise HTTPException(404, "검사를 찾을 수 없습니다.")
-    if artifact is None:
+    if not _available(scan, artifact, run):
         return {
             "scan_id": str(scan_id),
             "available": False,
@@ -159,7 +171,7 @@ def download_sbom(scan_id: UUID):
     scan, artifact, run = _lookup(scan_id)
     if scan is None:
         raise HTTPException(404, "검사를 찾을 수 없습니다.")
-    if artifact is None:
+    if not _available(scan, artifact, run):
         raise _not_available(scan, run)
 
     path = _resolve(artifact["storage_key"], scan_id)
