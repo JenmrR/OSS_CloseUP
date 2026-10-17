@@ -92,6 +92,8 @@ export function aiReportView({ loading, data, error } = {}) {
     ? `${data.model || '모델 미기록'} · 프롬프트 ${data.prompt_version}${data.created_at ? ` · ${data.created_at.slice(0, 16).replace('T', ' ')} 생성` : ''}`
     : null
   switch (status) {
+    case 'stale':
+      return { tone: 'muted', message: data.message || '검사 정보 또는 보고서 형식이 변경되었습니다. AI 설명을 다시 생성해 주세요.' }
     case 'succeeded':
       return { tone: 'muted', message: '이 검사 결과를 바탕으로 만든 설명입니다.', output: data.output, meta }
     case 'pending':
@@ -197,4 +199,143 @@ export function parseRoute(hash) {
 export function routeHash(scanId, findingId) {
   if (!scanId) return ''
   return findingId ? `#/scan/${scanId}/finding/${findingId}` : `#/scan/${scanId}`
+}
+
+// ── 대시보드 요약(Figma 시안 기준) ─────────────────────────
+
+export const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
+const sevIndex = (s) => SEVERITIES.indexOf(SEVERITIES.includes(s) ? s : 'UNKNOWN')
+
+export const RELATION_LABEL = { direct: '직접 설치', indirect: '다른 패키지가 사용', root: '프로젝트 자체', unknown: '확인 불가' }
+export const relationLabel = (r) => RELATION_LABEL[r] || '확인 불가'
+
+// findings 응답에는 라이선스·유지보수 유형도 들어올 수 있다. 취약점만 고른다.
+export function vulnItems(findings) {
+  return ((findings && findings.items) || []).filter((f) => !f.type || f.type === 'vulnerability')
+}
+
+export function severityCounts(items) {
+  const counts = Object.fromEntries(SEVERITIES.map((s) => [s, 0]))
+  for (const item of items || []) counts[SEVERITIES[sevIndex(item.severity)]] += 1
+  return counts
+}
+
+const PRIORITY_RANK = { P0: 0, P1: 1, P2: 2, P3: 3, INFO: 4 }
+
+// 패키지별 우선순위 중 가장 급한 값. 계산되지 않았으면 null(산정 전).
+export function bestPriority(finding) {
+  const list = [...((finding && finding.packages) || []).map((p) => p && p.priority), finding && finding.priority]
+    .filter((p) => p in PRIORITY_RANK)
+  return list.sort((a, b) => PRIORITY_RANK[a] - PRIORITY_RANK[b])[0] || null
+}
+
+export const priorityComputed = (items) => (items || []).some((f) => bestPriority(f))
+
+// 먼저 볼 항목: 우선순위 규칙이 계산한 값만 쓴다(심각도로 대신 정하지 않는다).
+// 포함 범위와 개수는 잠정값이며 우선순위 규칙 담당과 합의가 필요하다.
+export const FIRST_LOOK = { priorities: ['P0', 'P1', 'P2'], max: 5 }
+
+export function firstLook(items) {
+  return (items || [])
+    .map((f) => ({ f, p: bestPriority(f) }))
+    .filter((x) => x.p && FIRST_LOOK.priorities.includes(x.p))
+    .sort((a, b) => PRIORITY_RANK[a.p] - PRIORITY_RANK[b.p]
+      || sevIndex(a.f.severity) - sevIndex(b.f.severity)
+      || String(findingLabel(a.f)).localeCompare(String(findingLabel(b.f))))
+    .slice(0, FIRST_LOOK.max)
+    .map((x) => ({ ...x.f, best_priority: x.p }))
+}
+
+export function packageSummary(packages) {
+  const all = (packages && packages.items) || []
+  const external = all.filter((i) => i.relationship !== 'root')
+  const direct = external.filter((i) => i.relationship === 'direct').length
+  const indirect = external.filter((i) => i.relationship === 'indirect').length
+  return {
+    total: external.length, direct, indirect, unknown: external.length - direct - indirect,
+    root: all.find((i) => i.relationship === 'root') || null,
+    status: ((packages && packages.package_storage) || {}).status || null,
+  }
+}
+
+export function licenseSummary(packages) {
+  const external = ((packages && packages.items) || []).filter((i) => i.relationship !== 'root')
+  const review = external.filter((i) => licenseState(i.licenses) === 'review').length
+  const unknown = external.filter((i) => licenseState(i.licenses) === 'unknown').length
+  return { review, unknown, total: review + unknown }
+}
+
+// 유지보수: 확인된 사실(archived, deprecated)만 센다. null은 '아니오'가 아니다.
+export function maintenanceSummary(maintenance) {
+  const items = (maintenance && maintenance.items) || []
+  const archived = items.filter((i) => i.archived === true).length
+  const deprecated = items.filter((i) => i.deprecated === true).length
+  const flagged = items.filter((i) => i.archived === true || i.deprecated === true).length
+  return { archived, deprecated, flagged, status: ((maintenance && maintenance.collection) || {}).status || null }
+}
+
+// 고치는 방법 표에 쓰는 한 줄 요약. 추천 버전(우선순위 규칙) > 범위로 확인된 수정 버전 > 후보.
+export function fixSummary(pkg) {
+  if (!pkg) return { text: '—', tone: 'muted' }
+  if (pkg.recommended_fixed_version) return { text: `수정 버전 ${pkg.recommended_fixed_version}`, tone: 'text' }
+  const guide = fixGuide(pkg)
+  if (guide.target) return { text: `수정 버전 ${guide.target}`, tone: 'text' }
+  if (guide.candidates.length) return { text: `수정 후보 ${guide.candidates.join(', ')} (확인 필요)`, tone: 'muted' }
+  return { text: '보고된 수정 버전 없음', tone: 'muted' }
+}
+
+export function stagesDone(scan) {
+  const toolStatus = (scan && scan.tool_status) || {}
+  return STAGES.filter(([key]) => DONE.has((toolStatus[key] || {}).status)).length
+}
+
+export function scanDuration(scan) {
+  const start = scan && Date.parse(scan.started_at || scan.created_at)
+  const end = scan && Date.parse(scan.finished_at)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null
+  const sec = Math.round((end - start) / 1000)
+  return sec >= 60 ? `${Math.floor(sec / 60)}분 ${sec % 60}초` : `${sec}초`
+}
+
+// ── AI 설명 ─────────────────────────────────────────────
+// 검사가 끝나면 이 심각도의 항목만 자동으로 설명을 만든다(소개서 3.6).
+export const AI_AUTO_SEVERITIES = ['CRITICAL', 'HIGH']
+// 자동 생성 파이프라인이 연결되면 true로 바꾼다. 업로드 화면의 외부 전송 안내도 이 값을 따른다.
+export const AI_AUTO_EXPLAIN = false
+
+export function aiFindingView(ai, severity) {
+  const view = aiReportView(ai)
+  const status = ai && ai.data && ai.data.status
+  if (!ai.loading && !ai.error && (!status || status === 'not_generated')
+      && !AI_AUTO_SEVERITIES.includes(severity)) {
+    return { tone: 'muted', kind: 'skipped', message: `이 항목(${severity || 'UNKNOWN'})은 자동 설명 대상(CRITICAL·HIGH)이 아니에요. 검사 결과와 고치는 방법을 참고하세요.` }
+  }
+  const kind = ai.loading ? 'loading'
+    : ai.error ? 'error'
+      : status === 'succeeded' ? 'done'
+        : status === 'pending' || status === 'running' ? 'running'
+          : status === 'failed' || status === 'rejected' ? 'failed' : 'none'
+  return { ...view, kind }
+}
+
+const AI_LABELS = { summary: '요약', reason: '왜 먼저 봐야 하나', recommendation: '권장 조치', next_actions: '다음 행동', highlights: '항목별 설명', uncertainty: '확인할 한계' }
+
+// LLM 출력(JSON 객체)을 화면 섹션으로 바꾼다. 아는 키만 문장으로 보여주고 나머지는 원문으로 둔다.
+export function aiSections(output) {
+  if (!output || typeof output !== 'object') return { sections: [], evidence: [], extra: null }
+  const sections = []
+  const extra = {}
+  let evidence = []
+  for (const [key, value] of Object.entries(output)) {
+    if (key === 'evidence' && Array.isArray(value)) {
+      evidence = value.map((v) => (typeof v === 'string' ? v : v && (v.label || v.value || v.id))).filter(Boolean).map(String)
+    } else if (AI_LABELS[key] && typeof value === 'string') {
+      sections.push({ key, label: AI_LABELS[key], text: value })
+    } else if (AI_LABELS[key] && Array.isArray(value) && value.every((v) => typeof v === 'string')) {
+      sections.push({ key, label: AI_LABELS[key], list: value })
+    } else {
+      extra[key] = value
+    }
+  }
+  return { sections, evidence, extra: Object.keys(extra).length ? extra : null }
 }

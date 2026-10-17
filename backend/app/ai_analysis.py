@@ -1,6 +1,6 @@
 """AI 설명 조회 API.
 
-LLM 호출은 아직 붙이지 않았다(API 미선정). 이 모듈은 저장된 설명을 상태와 함께 돌려주기만 한다.
+생성은 POST에서만 수행한다. GET은 저장된 설명을 조회하며 유료 호출을 하지 않는다.
 - 설명이 없으면 404가 아니라 status='not_generated'로 응답한다. 검사 결과 화면을 막지 않기 위해서다.
 - succeeded일 때만 본문(output)을 내보낸다. failed/rejected는 사유 코드만 보여준다.
 - 검사 사실(심각도·우선순위·수정 후보)은 여기서 다루지 않는다.
@@ -36,6 +36,10 @@ SELECT DISTINCT ON (finding_id)
 
 # 화면에 그대로 노출해도 되는 실패 사유 안내. 원문 오류 메시지는 내보내지 않는다.
 ERROR_MESSAGES = {
+    "interrupted": "이전 생성이 중단되었습니다. 다시 생성해 주세요.",
+    "rate_limited": "API 사용량 또는 크레딧 한도를 확인한 뒤 다시 시도하세요.",
+    "incomplete": "설명이 끝까지 생성되지 않았습니다. 모델 설정을 확인하세요.",
+    "refused": "모델이 이 입력에 대한 설명을 반환하지 않았습니다.",
     "timeout": "설명 생성 시간이 초과되었습니다.",
     "provider_error": "설명 생성 서비스에서 오류가 발생했습니다.",
     "validation_failed": "생성된 설명이 검사 결과와 맞지 않아 표시하지 않습니다.",
@@ -94,7 +98,38 @@ def _require_scan(scan_id: UUID):
 @router.get("/scans/{scan_id}/ai/report")
 def ai_report(scan_id: UUID):
     _require_scan(scan_id)
-    return {"scan_id": str(scan_id), **_present(_load_report(scan_id))}
+    from .ai_service import stale_report
+    row = _load_report(scan_id)
+    if stale_report(scan_id, row):
+        return {"scan_id": str(scan_id), "status": "stale"}
+    return {"scan_id": str(scan_id), **_present(row)}
+
+
+@router.post("/scans/{scan_id}/ai/report")
+def generate_ai_report(scan_id: UUID):
+    from .ai_service import generate
+    return {"scan_id": str(scan_id), **_present(generate(scan_id))}
+
+
+@router.get("/scans/{scan_id}/ai/findings/{finding_id}")
+def ai_finding(scan_id: UUID, finding_id: UUID):
+    from .ai_service import stale_report
+    _require_scan(scan_id)
+    with connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT 1 FROM findings WHERE scan_id=%s AND finding_id=%s", (scan_id, finding_id))
+        if cur.fetchone() is None:
+            raise HTTPException(404, "이 검사에서 해당 취약점을 찾을 수 없습니다.")
+        cur.execute("""SELECT * FROM ai_analyses WHERE scan_id=%s AND scope='finding' AND finding_id=%s
+                       ORDER BY created_at DESC,attempt_no DESC LIMIT 1""", (scan_id, finding_id))
+        row = cur.fetchone()
+    body = {"status": "stale"} if stale_report(scan_id, row) else _present(row)
+    return {"scan_id": str(scan_id), "finding_id": str(finding_id), **body}
+
+
+@router.post("/scans/{scan_id}/ai/findings/{finding_id}")
+def generate_ai_finding(scan_id: UUID, finding_id: UUID):
+    from .ai_service import generate
+    return {"scan_id": str(scan_id), "finding_id": str(finding_id), **_present(generate(scan_id, finding_id))}
 
 
 @router.get("/scans/{scan_id}/ai/findings")
