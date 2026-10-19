@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { bestPriority, findingLabel, fixGuide, relationLabel, uniqueFixVersions } from './display'
+import { findingLabel, fixGuide, relationLabel, uniqueFixVersions } from './display'
 import AiReport from './AiReport'
 import Icon from './Icons'
+import DependencyPaths from './DependencyPaths'
 
 function CopyCommand({ command }) {
   const [copied, setCopied] = useState(false)
@@ -61,7 +62,7 @@ function candidateBasis(c) {
 
 const idText = (x) => (typeof x === 'string' ? x : x && (x.value || x.id))
 
-export default function FindingDetail({ scanId, scanStatus, finding, index, total, onBack, onPrev, onNext }) {
+export default function FindingDetail({ scanId, scanStatus, actionRank, finding, index, total, onBack, onPrev, onNext }) {
   useEffect(() => {
     function onKey(event) {
       if (event.key === 'Escape') onBack()
@@ -78,7 +79,6 @@ export default function FindingDetail({ scanId, scanStatus, finding, index, tota
   const severity = finding.severity || 'UNKNOWN'
   const ids = (finding.identifiers || []).map(idText).filter(Boolean)
   const title = packages.length === 1 ? `${packages[0].name}@${packages[0].installed_version}` : findingLabel(finding)
-  const priority = bestPriority(finding)
 
   return (
     <div className="oc-detail">
@@ -100,6 +100,8 @@ export default function FindingDetail({ scanId, scanStatus, finding, index, tota
         <p className="oc-ids">{(ids.length ? ids : [findingLabel(finding)]).join(' · ')}</p>
       </div>
 
+      <DependencyPaths scanId={scanId} findingId={finding.finding_id} />
+
       <section className="oc-panel">
         <h2 className="oc-ptitle" style={{ marginBottom: 10 }}>검사 결과</h2>
         <dl className="oc-dl">
@@ -115,7 +117,7 @@ export default function FindingDetail({ scanId, scanStatus, finding, index, tota
             검사 엔진 {(finding.source_tools || []).length}개
             {finding.severity_conflict ? ' · 엔진마다 심각도가 다름(근거 보기 참고)' : ' · 심각도 일치'}
           </dd></div>
-          <div><dt>조치 우선순위</dt><dd>{priority || <span className="muted">산정 전</span>}</dd></div>
+          {actionRank != null && <div><dt>조치 우선순위</dt><dd>{actionRank}위</dd></div>}
           {finding.manual_review_reason && <div><dt>수동 확인 사유</dt><dd>{finding.manual_review_reason}</dd></div>}
         </dl>
       </section>

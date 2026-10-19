@@ -18,6 +18,8 @@ from psycopg.types.json import Jsonb
 from .finding_storage import store_findings, finalize
 from .package_storage import store_packages
 from .maintenance import collect as collect_maintenance
+from .priority_storage import evaluate_scan
+from .priority_stage import PriorityStagePersistenceError
 
 log = logging.getLogger('worker')
 STOP = threading.Event()
@@ -43,7 +45,7 @@ def recover(conn):
             (SELECT scan_id FROM scan_runs WHERE status='running')""")
         conn.execute("""UPDATE scan_runs SET status='failed', finished_at=now(),
             error_message='worker_interrupted; upload again to retry',
-            tool_status=tool_status || '{"worker":{"status":"failed","reason":"worker_interrupted"}}'::jsonb
+            tool_status=tool_status || '{"worker":{"status":"failed","reason":"worker_interrupted"},"priority":{"status":"failed","current_result_available":false,"error_code":"WORKER_INTERRUPTED"}}'::jsonb
             WHERE status='running'""")
 
 
@@ -179,6 +181,18 @@ def process(conn, scan):
         except (OSError,ValueError,KeyError,TypeError,psycopg.IntegrityError):
             log.exception('normalization storage failed: %s',sid)
             status(conn,sid,'normalization',{'status':'failed','reason':'normalization_storage_failed'})
+        try:
+            result = evaluate_scan(conn, scan)
+            log.info('scan=%s priority=%s', sid, result['status'])
+        except PriorityStagePersistenceError:
+            # Evidence is already committed; never turn storage failure into success.
+            log.warning('scan=%s priority persistence failed', sid)
+            updated = conn.execute('''UPDATE scan_runs SET tool_status=tool_status || %s
+                WHERE scan_id=%s AND status='running' AND worker_id=%s AND attempt_count=%s''',
+                (Jsonb({'priority': {'status':'failed','current_result_available':False,
+                    'error_code':'PRIORITY_PERSISTENCE_FAILED'}}),sid,scan['worker_id'],scan['attempt_count']))
+            if updated.rowcount != 1:
+                raise RuntimeError('priority_worker_fence_mismatch')
         def maintenance_tick():
             if STOP.is_set(): raise InterruptedError('worker_shutdown')
             heartbeat(conn,sid)

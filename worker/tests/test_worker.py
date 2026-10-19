@@ -51,6 +51,7 @@ def test_input_hash_and_path(tmp_path,monkeypatch):
     with pytest.raises(ValueError,match='path'): w.verify_inputs(c,'s')
 
 def test_raw_success_is_partial(tmp_path,monkeypatch):
+    monkeypatch.setattr(w,'evaluate_scan',lambda *a: {'status':'completed'})
     monkeypatch.setattr(w,'finalize',lambda *a:'partial')
     monkeypatch.setattr(w,'OUTPUT_ROOT',tmp_path)
     monkeypatch.setattr(w,'verify_inputs',lambda *a:{'package_lock':tmp_path/'lock'})
@@ -62,6 +63,7 @@ def test_raw_success_is_partial(tmp_path,monkeypatch):
     assert c.execute.call_args.args[1][0]=='partial'
 
 def test_all_failed(tmp_path,monkeypatch):
+    monkeypatch.setattr(w,'evaluate_scan',lambda *a: {'status':'invalid_input'})
     monkeypatch.setattr(w,'finalize',lambda *a:'failed')
     monkeypatch.setattr(w,'OUTPUT_ROOT',tmp_path)
     monkeypatch.setattr(w,'verify_inputs',lambda *a:{'package_lock':tmp_path/'lock'})

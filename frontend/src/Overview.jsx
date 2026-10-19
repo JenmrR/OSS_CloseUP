@@ -5,20 +5,20 @@ import Icon from './Icons'
 
 const SEV_COLOR = { CRITICAL: 'var(--oc-crit)', HIGH: 'var(--oc-high)', MEDIUM: 'var(--oc-med)', LOW: 'var(--oc-low)', UNKNOWN: 'var(--oc-unknown)' }
 
-function Card({ num, label, icon, children }) {
+function Card({ num, label, icon, children, onClick }) {
   return (
-    <div className="oc-card">
+    <button type="button" className="oc-card" onClick={onClick} aria-label={`${label} 보기`}>
       <div className="top">
         <div><div className="num">{num}</div><div className="lab">{label}</div></div>
         <span className="ico"><Icon name={icon} /></span>
       </div>
       <div className="foot">{children}</div>
-    </div>
+    </button>
   )
 }
 
 // 요약 카드 4칸. 세 축(보안·라이선스·유지보수)은 따로 세고 합친 점수를 만들지 않는다.
-export function SummaryCards({ packages, vulns, findings, maintenance, scan }) {
+export function SummaryCards({ packages, vulns, findings, maintenance, scan, onNavigate }) {
   const pkg = packageSummary(packages)
   const lic = licenseSummary(packages)
   const mnt = maintenanceSummary(maintenance)
@@ -29,12 +29,12 @@ export function SummaryCards({ packages, vulns, findings, maintenance, scan }) {
   const failed = vulnScanFailed(scan)
   return (
     <section className="oc-panel oc-cards" aria-label="검사 요약">
-      <Card num={pkgReady ? pkg.total : '—'} label="외부 패키지" icon="box">
+      <Card num={pkgReady ? pkg.total : '—'} label="외부 패키지" icon="box" onClick={() => onNavigate?.('packages')}>
         {pkgReady
           ? <>직접 {pkg.direct} · 다른 패키지가 사용 {pkg.indirect}{pkg.unknown ? ` · 확인 불가 ${pkg.unknown}` : ''}</>
           : '패키지 목록을 정리하는 중'}
       </Card>
-      <Card num={vulnReady ? vulns.length : '—'} label="취약점" icon="alert">
+      <Card num={vulnReady ? vulns.length : '—'} label="취약점" icon="alert" onClick={() => onNavigate?.('findings')}>
         {!vulnReady ? '결과를 정리하는 중'
           : failed ? <span className="err">일부 검사 실패 · 전부가 아닐 수 있음</span>
             : vulns.length === 0 ? '알려진 취약점 없음'
@@ -42,10 +42,10 @@ export function SummaryCards({ packages, vulns, findings, maintenance, scan }) {
                 <span key={s} className="s"><span className={`oc-dot sev-${s}`} />{s} {counts[s]}</span>
               ))}
       </Card>
-      <Card num={pkgReady ? lic.total : '—'} label="라이선스 조건 확인" icon="doc">
+      <Card num={pkgReady ? lic.total : '—'} label="라이선스 조건 확인" icon="doc" onClick={() => onNavigate?.('licenses')}>
         {pkgReady ? `조건 확인 ${lic.review} · 정보 없음 ${lic.unknown}` : '패키지 목록을 정리하는 중'}
       </Card>
-      <Card num={mntReady ? mnt.flagged : '—'} label="유지보수 확인" icon="gear">
+      <Card num={mntReady ? mnt.flagged : '—'} label="유지보수 확인" icon="gear" onClick={() => onNavigate?.('maintenance')}>
         {!mntReady ? '저장소 정보를 조회하는 중'
           : <>보관(archived) {mnt.archived} · 사용 중단 {mnt.deprecated}{mnt.status === 'partial' || mnt.status === 'failed' ? ' · 일부 확인 불가' : ''}</>}
       </Card>

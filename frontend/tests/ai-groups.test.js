@@ -34,7 +34,9 @@ test('old report prose is hidden but individual explanations remain readable', (
   assert.equal(currentAiData(old).output, undefined)
   assert.equal(currentAiData(old, 'finding-1'), old)
   const grouped = { status: 'succeeded', output: { layout: 'grouped-v2', groups: [] } }
-  assert.equal(currentAiData(grouped), grouped)
+  assert.equal(currentAiData(grouped).status, 'stale')
+  const narrative = { status: 'succeeded', output: { layout: 'narrative-v3', paragraphs: [] } }
+  assert.equal(currentAiData(narrative), narrative)
 })
 
 test('finding read and manual generate address the selected finding only', async () => {

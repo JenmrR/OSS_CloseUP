@@ -37,6 +37,7 @@ export function createScan(packageJson, packageLock) {
 }
 
 export const getScan = (scanId) => request(`/scans/${scanId}`)
+export const getDependencyPaths = (scanId, findingId) => request(`/scans/${scanId}/findings/${findingId}/dependency-paths`)
 // 서버의 페이지 상한은 유지하고 전체 페이지를 모은다. 일부 페이지만 성공하면 오류로 표시한다.
 async function getAll(scanId, resource) {
   const items = []

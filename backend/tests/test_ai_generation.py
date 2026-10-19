@@ -114,6 +114,15 @@ class GenerationTests(unittest.TestCase):
                 self.assertEqual(caught.exception.code, code)
                 self.assertEqual(call.call_count, 1)
 
+    def test_provider_configuration_errors_are_safe_and_distinct(self):
+        for status, code in [(400, 'invalid_request'), (401, 'authentication_failed'),
+                             (403, 'permission_denied'), (404, 'model_unavailable')]:
+            error = HTTPError('url', status, 'secret provider message', {}, None)
+            with patch('app.ai_generation.urlopen', side_effect=error):
+                with self.assertRaises(GenerationError) as caught:
+                    call_model(fixture(), 'test-only', 'model')
+            self.assertEqual(str(caught.exception), code)
+
     def test_refusal_incomplete_malformed(self):
         cases = [({"status": "incomplete"}, "incomplete"),
                  ({"status": "completed", "output": [{"type": "message", "content": [{"type": "refusal"}]}]}, "refused"),

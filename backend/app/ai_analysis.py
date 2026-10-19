@@ -36,6 +36,10 @@ SELECT DISTINCT ON (finding_id)
 
 # 화면에 그대로 노출해도 되는 실패 사유 안내. 원문 오류 메시지는 내보내지 않는다.
 ERROR_MESSAGES = {
+    "model_unavailable": "설정한 AI 모델을 찾을 수 없거나 사용할 권한이 없습니다. 백엔드 모델 설정을 확인하세요.",
+    "authentication_failed": "AI API 키 인증에 실패했습니다. 백엔드 키 설정을 확인하세요.",
+    "permission_denied": "이 프로젝트에 AI API를 사용할 권한이 없습니다.",
+    "invalid_request": "AI 요청 설정이 지원되지 않습니다. 백엔드 모델과 요청 형식을 확인하세요.",
     "interrupted": "이전 생성이 중단되었습니다. 다시 생성해 주세요.",
     "rate_limited": "API 사용량 또는 크레딧 한도를 확인한 뒤 다시 시도하세요.",
     "incomplete": "설명이 끝까지 생성되지 않았습니다. 모델 설정을 확인하세요.",

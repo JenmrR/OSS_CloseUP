@@ -271,3 +271,43 @@ html body #root { max-width: none; margin: 0; padding: 0; text-align: left; }
 .oc-ai-members > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; max-height: 240px; overflow-y: auto; }
 .oc-ai-members button { text-align: left; white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
 .oc-ai-count-note { font-size: 12px; margin-top: 10px; }
+.oc-ai-narrative { display: grid; gap: 16px; }
+.oc-report-section { padding: 20px; border: 1px solid var(--oc-tint-line); border-radius: 12px; background: #fff; min-width: 0; }
+.oc-report-section h3 { margin: 0 0 14px; font-size: 16px; font-weight: 700; }
+.oc-report-lead { margin: 0 0 10px; font-weight: 700; }
+.oc-report-body { margin: 10px 0 0; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+.oc-report-findings { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 10px; }
+.oc-report-findings li { padding: 12px 14px; background: #f5f8ff; border-radius: 8px; overflow-wrap: anywhere; }
+.oc-report-findings span { display: block; font-size: 12px; color: var(--oc-sub); margin-bottom: 4px; }
+.oc-report-findings strong { font-size: 13px; }
+.oc-report-findings p { margin: 4px 0 0; font-size: 13px; line-height: 1.6; }
+.oc-report-primary-link, .oc-report-text-link { border: 0; padding: 0; background: none; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.oc-report-primary-link { font-size: 17px; font-weight: 700; color: var(--oc-sea); }
+.oc-report-primary-link:hover, .oc-report-text-link:hover { text-decoration: underline; }
+.oc-report-primary-link:focus-visible, .oc-report-text-link:focus-visible { outline: 2px solid var(--oc-sea); outline-offset: 4px; }
+.oc-report-related-list { display: grid; gap: 10px; font-size: 13px; }
+.oc-report-package-label { margin: 0 0 4px; font-weight: 600; }
+.oc-report-package-label span { font-weight: 400; color: var(--oc-sub); }
+.oc-report-related-list ul { margin: 0; padding-left: 18px; }
+.oc-report-related-list li { margin: 4px 0; line-height: 1.5; }
+.oc-report-text-link { overflow-wrap: anywhere; }
+.oc-report-related-more summary { cursor: pointer; font-size: 13px; color: var(--oc-sea); }
+.oc-report-related-more[open] summary { margin-bottom: 14px; }
+
+.oc-dependency-path { margin: 14px 0; }
+.oc-dependency-path ol { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 12px; border-radius: 8px; background: #f5f8ff; }
+.oc-dependency-path li { overflow-wrap: anywhere; font-size: 13px; }
+
+button.oc-card { border: 0; border-radius: 0; background: transparent; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+button.oc-card + button.oc-card { border-left: 1px solid var(--oc-line); }
+button.oc-card:hover { background: #f5f8ff; }
+button.oc-card:focus-visible { outline: 2px solid var(--oc-sea); outline-offset: 4px; }
+
+/* Each summary button owns its full cell, including the surrounding spacing. */
+.oc-panel.oc-cards { padding: 0; overflow: hidden; }
+.oc-cards button.oc-card, .oc-cards button.oc-card:first-child, .oc-cards button.oc-card:last-child { padding: 20px; }
+.oc-cards button.oc-card:focus-visible { outline-offset: -3px; }
+.oc-priority-controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin-bottom: 18px; font-size: 13px; }
+.oc-priority-controls label { display: flex; gap: 8px; align-items: center; }
+.oc-priority-controls select { padding: 8px 10px; border: 1px solid var(--oc-line); border-radius: 8px; background: #fff; color: inherit; font: inherit; }
+@media (max-width: 760px) { .oc-panel.oc-cards { row-gap: 0; } .oc-cards button.oc-card:nth-child(3) { border-left: 0; } }

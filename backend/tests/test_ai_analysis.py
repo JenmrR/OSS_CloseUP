@@ -41,13 +41,22 @@ def test_missing_report_is_not_an_error(client):
     assert r.json()['status'] == 'not_generated'
 
 
-def test_succeeded_report_includes_output(client):
+def test_succeeded_report_includes_output(client, monkeypatch):
+    from app import ai_service
+    monkeypatch.setattr(ai_service, 'stale_report', lambda *_: False)
     c, state, sid = client
     state['report'] = row('succeeded', output={'summary': 's'}, validation={'passed': True}, finished_at=NOW)
     body = c.get(f'/scans/{sid}/ai/report').json()
     assert body['status'] == 'succeeded'
     assert body['output'] == {'summary': 's'}
     assert body['prompt_version'] == 'v0.1'
+
+
+def test_old_grouped_report_is_stale(client):
+    c, state, sid = client
+    state['report'] = row('succeeded', prompt_version='scan-grouped-v2', output={'layout': 'grouped-v2'})
+    body = c.get(f'/scans/{sid}/ai/report').json()
+    assert body['status'] == 'stale' and 'output' not in body
 
 
 @pytest.mark.parametrize('status,code', [('rejected', 'validation_failed'), ('failed', 'timeout')])

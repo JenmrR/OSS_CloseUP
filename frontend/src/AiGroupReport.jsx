@@ -10,7 +10,7 @@ export default function AiGroupReport({ output, findings, onFinding }) {
         return (
           <article className="oc-ai-group" key={group.group_key}>
             <div className="oc-ai-group-head">
-              <h3>{/^(P[0-3]|INFO)$/.test(group.group_key) && <span className="oc-ai-grade">{group.group_key}</span>}{group.title}</h3>
+              <h3>{group.title}</h3>
               <span>{group.finding_count}건 · {group.package_count}개 패키지</span>
             </div>
             <p className="oc-ai-packages">{group.example_packages.join(' · ') || '연결 패키지 정보 없음'}{group.remaining_package_names > 0 ? ` 외 ${group.remaining_package_names}종` : ''}</p>

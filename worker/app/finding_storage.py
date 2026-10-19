@@ -146,6 +146,8 @@ def finalize(conn, scan_id):
     states = row['tool_status']
     names = ('trivy','osv','syft','package_storage','normalization','github')
     complete = all(states.get(n,{}).get('status') == 'completed' for n in names)
+    if 'priority' in states:
+        complete = complete and states['priority'].get('status') == 'completed'
     final = 'completed' if complete else ('partial' if any(states.get(n,{}).get('status')=='completed' for n in ('trivy','osv','syft')) else 'failed')
     conn.execute('''UPDATE scan_runs SET status=%s,error_message=%s WHERE scan_id=%s''',
         (final,None if complete else 'incomplete_stages; see tool_status',scan_id))

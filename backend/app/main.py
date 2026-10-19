@@ -46,3 +46,5 @@ app.add_middleware(UploadBodyLimit)
 app.include_router(router)
 app.include_router(sbom_router)
 app.include_router(ai_router)
+from .dependency_view import router as dependency_router
+app.include_router(dependency_router)

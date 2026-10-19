@@ -189,16 +189,16 @@ export function findingLabel(item) {
 }
 
 // ── 주소(#) 기반 화면 위치: 새로고침·뒤로 가기·주소 공유용 ──
-const ROUTE = /^#\/scan\/([0-9a-fA-F-]{36})(?:\/finding\/([0-9a-fA-F-]{36}))?$/
+const ROUTE = /^#\/scan\/([0-9a-fA-F-]{36})(?:\/finding\/([0-9a-fA-F-]{36})|\/(findings|licenses|maintenance|packages))?$/
 
 export function parseRoute(hash) {
   const m = ROUTE.exec(hash || '')
-  return m ? { scanId: m[1], findingId: m[2] || null } : { scanId: null, findingId: null }
+  return m ? { scanId: m[1], findingId: m[2] || null, ...(m[3] ? { section: m[3] } : {}) } : { scanId: null, findingId: null }
 }
 
-export function routeHash(scanId, findingId) {
+export function routeHash(scanId, findingId, section = 'first') {
   if (!scanId) return ''
-  return findingId ? `#/scan/${scanId}/finding/${findingId}` : `#/scan/${scanId}`
+  return findingId ? `#/scan/${scanId}/finding/${findingId}` : `#/scan/${scanId}${section !== 'first' && ['findings', 'licenses', 'maintenance', 'packages'].includes(section) ? `/${section}` : ''}`
 }
 
 // ── 대시보드 요약(Figma 시안 기준) ─────────────────────────
@@ -235,12 +235,30 @@ export const priorityComputed = (items) => (items || []).some((f) => bestPriorit
 // 포함 범위와 개수는 잠정값이며 우선순위 규칙 담당과 합의가 필요하다.
 export const FIRST_LOOK = { priorities: ['P0', 'P1', 'P2'], max: 5 }
 
+// Use one representative package consistently for name, priority and fix information.
+export function representativePackage(finding) {
+  const p = bestPriority(finding)
+  const packages = finding.packages || []
+  const eligible = p ? packages.filter((x) => x.priority === p) : packages
+  return [...eligible].sort((a, b) => (a.priority_rank ?? Infinity) - (b.priority_rank ?? Infinity)
+    || (p ? Number(uniqueFixVersions(b.fixed_version_candidates).length > 0) - Number(uniqueFixVersions(a.fixed_version_candidates).length > 0) : 0)
+    || String(a.name).localeCompare(String(b.name)))[0]
+}
+
+export function priorityStateText(state) {
+  if (state?.current_result_available) return '조치 우선순위 계산 완료'
+  if (state?.status === 'running') return '조치 우선순위를 계산하고 있습니다.'
+  if (['failed', 'invalid_input', 'unavailable'].includes(state?.status)) return '우선순위 계산 결과를 사용할 수 없습니다. 검사 결과와 근거는 계속 확인할 수 있습니다.'
+  return '조치 우선순위 산정 전입니다. 이전 검사는 새로 업로드해 주세요.'
+}
+
 export function firstLook(items) {
   return (items || [])
-    .map((f) => ({ f, p: bestPriority(f) }))
+    .map((f) => ({ f, p: bestPriority(f), pkg: representativePackage(f) }))
     .filter((x) => x.p && FIRST_LOOK.priorities.includes(x.p))
     .sort((a, b) => PRIORITY_RANK[a.p] - PRIORITY_RANK[b.p]
-      || sevIndex(a.f.severity) - sevIndex(b.f.severity)
+      || (a.f.priority_rank ?? Infinity) - (b.f.priority_rank ?? Infinity)
+      || Number(uniqueFixVersions(b.pkg?.fixed_version_candidates).length > 0) - Number(uniqueFixVersions(a.pkg?.fixed_version_candidates).length > 0)
       || String(findingLabel(a.f)).localeCompare(String(findingLabel(b.f))))
     .slice(0, FIRST_LOOK.max)
     .map((x) => ({ ...x.f, best_priority: x.p }))
@@ -338,4 +356,19 @@ export function aiSections(output) {
     }
   }
   return { sections, evidence, extra: Object.keys(extra).length ? extra : null }
+}
+
+// Ranking is global to the scan, independent of search and detail navigation order.
+export function topFindingRank(items, findingId) {
+  const index = firstLook(items).findIndex((finding) => finding.finding_id === findingId)
+  return index < 0 ? null : index + 1
+}
+
+// Apply server priority groups and stored rank without changing the underlying findings.
+export function priorityList(items, group = 'all', order = 'priority') {
+  const rows = (items || []).filter((f) => group === 'all' || (bestPriority(f) || 'unranked') === group)
+  if (order === 'original') return rows
+  const grades = { P0: 0, P1: 1, P2: 2, P3: 3 }
+  return [...rows].sort((a, b) => (grades[bestPriority(a)] ?? 4) - (grades[bestPriority(b)] ?? 4)
+    || (a.priority_rank ?? Infinity) - (b.priority_rank ?? Infinity))
 }

@@ -69,6 +69,9 @@ def allowed_reasons(item):
 
 
 def model_payload(snapshot, model):
+    if snapshot.get("layout") == "narrative-v3":
+        from .ai_narrative import model_payload as narrative_payload
+        return narrative_payload(snapshot, model)
     items = snapshot["items"]
     if not items or len(items) > MAX_ITEMS or len(canonical(snapshot).encode()) > MAX_INPUT_BYTES:
         raise GenerationError("input_too_large")
@@ -108,7 +111,9 @@ def call_model(snapshot, key, model):
             raise GenerationError("provider_error")
         data = json.loads(raw)
     except HTTPError as exc:
-        code = "rate_limited" if exc.code == 429 else "provider_error"
+        # Only publish our fixed codes, never the provider body (which may echo credentials).
+        code = {400: "invalid_request", 401: "authentication_failed", 403: "permission_denied",
+                404: "model_unavailable", 429: "rate_limited"}.get(exc.code, "provider_error")
         exc.close()
         raise GenerationError(code) from None
     except (TimeoutError, socket.timeout):
@@ -131,6 +136,9 @@ def call_model(snapshot, key, model):
 
 
 def render_output(snapshot, selection):
+    if snapshot.get("layout") == "narrative-v3":
+        from .ai_narrative import render_report
+        return render_report(snapshot, selection)
     if snapshot.get("layout") == "grouped-v2":
         from .ai_groups import render_groups
         return render_groups(snapshot, selection)

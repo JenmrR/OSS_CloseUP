@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getAiReport, generateAiReport, getAiFinding, generateAiFinding } from './api'
 import { aiReportView, aiSections } from './display'
-import AiGroupReport from './AiGroupReport'
+import AiNarrativeReport from './AiNarrativeReport'
 import { currentAiData } from './aiPresentation'
 
 const STATE_DOT = { loading: 'var(--oc-cyan)', running: 'var(--oc-cyan)', failed: 'var(--oc-crit)', error: 'var(--oc-crit)' }
@@ -46,7 +46,7 @@ export function AiBody({ view }) {
 }
 
 // 전체 AI 요약 보고서. 설명 조회가 실패해도 검사 결과 화면은 막지 않는다.
-export default function AiReport({ scanId, scanStatus, findingId = null, findings, onFinding }) {
+export default function AiReport({ scanId, scanStatus, findingId = null, onFinding }) {
   // 응답을 요청 키와 함께 저장하고, 키가 다르면(새 요청 중) 불러오는 중으로 본다.
   const requestKey = `${scanId}:${scanStatus}:${findingId || "report"}`
   const [result, setResult] = useState({ key: null })
@@ -111,15 +111,15 @@ export default function AiReport({ scanId, scanStatus, findingId = null, finding
       </div>
       {open && (
         <>
-          {!findingId && view.output ? <AiGroupReport output={view.output} findings={findings} onFinding={onFinding} /> : <AiBody view={{ ...view, kind }} />}
+          {!findingId && view.output ? <AiNarrativeReport output={view.output} onFinding={onFinding} /> : <AiBody view={{ ...view, kind }} />}
           <button type="button" className="oc-btn" disabled={!canGenerate || busy || current.loading || kind === 'succeeded'} onClick={generate}>
             {busy ? 'AI 설명 생성 중…' : kind === 'succeeded' ? 'AI 설명 생성 완료' : 'AI 설명 생성'}
           </button>
           {busy && <p className="state" role="status">설명을 생성하고 저장하고 있습니다. 잠시 기다려 주세요.</p>}
           {generationError && <p className="err" role="alert">{generationError}</p>}
           {!canGenerate && <p className="note">검사가 완료되거나 부분 완료된 뒤 생성할 수 있습니다.</p>}
-          <p className="note">{findingId ? '생성 시 선택한 취약점의 패키지명·검사 식별자·등급·의존성 정보를 OpenAI에 전송합니다.' : '생성 시 그룹별 건수·대표 패키지명·검사 상태를 OpenAI에 전송합니다.'} API 사용료가 발생할 수 있습니다. AI는 근거에 맞는 설명을 선택하고, 문장은 검증된 표현으로 표시합니다.</p>
-          <p className="note">순서·심각도·버전·검사 상태는 검사 시스템 값이며, AI는 설명 선택에만 사용됩니다. 설명이 없어도 아래 검사 결과는 그대로 확인할 수 있습니다.</p>
+          <p className="note">{findingId ? '생성 시 선택한 취약점의 패키지명·검사 식별자·등급·의존성 정보를 OpenAI에 전송합니다.' : '생성 시 우선 항목의 취약점 설명·패키지 정보·저장된 의존 경로와 관련 검사 근거를 OpenAI에 전송합니다.'} API 사용료가 발생할 수 있습니다. {findingId ? 'AI는 근거에 맞는 설명을 선택합니다.' : 'AI가 근거를 바탕으로 작성한 설명입니다. 연결된 근거에서 내용을 확인할 수 있습니다.'}</p>
+          <p className="note">순서·심각도·버전·검사 상태는 검사 시스템 값이며, AI는 설명에만 사용됩니다. 설명이 없어도 아래 검사 결과는 그대로 확인할 수 있습니다.</p>
         </>
       )}
     </section>

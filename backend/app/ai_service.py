@@ -6,13 +6,14 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .db import connect
+from .priority_view import load_priority
 from .ai_generation import (MAX_ATTEMPTS, MAX_ITEMS, PROMPT_VERSION, GenerationError,
                             allowed_reasons, call_model, config, fingerprint, render_output)
 
 
 def snapshot_for(conn, scan_id, finding_id=None):
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute("SELECT status FROM scan_runs WHERE scan_id=%s", (scan_id,))
+        cur.execute("SELECT status,tool_status FROM scan_runs WHERE scan_id=%s", (scan_id,))
         scan = cur.fetchone()
         if scan is None:
             raise HTTPException(404, "검사를 찾을 수 없습니다.")
@@ -35,11 +36,17 @@ def snapshot_for(conn, scan_id, finding_id=None):
                          f.finding_id, p.package_id
                 LIMIT %s""", (scan_id, finding_id, finding_id, 20001 if finding_id is None else MAX_ITEMS + 1))
         items = cur.fetchall()
+    priority_state, priority_result = load_priority(conn, scan_id, scan.get('tool_status', {}))
+    links = {(x['finding_id'],x['package_id']): x for x in (priority_result or {}).get('link_results', [])}
+    for item in items:
+        link = links.get((item['finding_id'],item['package_id']), {})
+        item['priority'] = link.get('priority')
+        item['priority_rule_version'] = link.get('priority_rule_version')
     if finding_id is None:
         if len(items) > 20000:
             raise HTTPException(413, "전체 보고서의 처리 한도(패키지 연결 20,000개)를 초과했습니다.")
-        from .ai_groups import group_facts
-        return group_facts(items, scan["status"], tools)
+        from .ai_narrative import snapshot_for_report
+        return snapshot_for_report(conn, scan_id, scan, tools, items, priority_state, priority_result)
     if not items:
         raise HTTPException(404, "이 검사에서 해당 취약점을 찾을 수 없습니다.")
     if len(items) > MAX_ITEMS:
@@ -47,12 +54,14 @@ def snapshot_for(conn, scan_id, finding_id=None):
     for item in items:
         item["evidence_id"] = item["finding_id"] + ":" + (item["package_id"] or "none")
         item["allowed_reasons"] = allowed_reasons(item)
-    return {"scan_status": scan["status"], "finding_count": 1, "tools": tools, "items": items,
+    return {"priority_evaluation": priority_state, "scan_status": scan["status"], "finding_count": 1, "tools": tools, "items": items,
             "scope_note": "All package links of one selected finding; not the entire scan."}
 
 
 def generate(scan_id: UUID, finding_id: UUID | None = None):
     scope = "finding" if finding_id else "scan_report"
+    from .ai_narrative import VERSION
+    prompt_version = PROMPT_VERSION if finding_id else VERSION
     # Session lock survives the commit that makes the running state visible.
     # A dedicated connection is closed at exit, releasing the lock even on error.
     with connect() as conn:
@@ -70,7 +79,7 @@ def generate(scan_id: UUID, finding_id: UUID | None = None):
                 raise HTTPException(409, "저장된 검사 항목이 없어 AI 설명을 생성하지 않습니다. 검사 상태를 확인하세요.")
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute("""SELECT * FROM ai_analyses WHERE scan_id=%s AND scope=%s
-                               AND finding_id IS NOT DISTINCT FROM %s::uuid AND prompt_version=%s ORDER BY attempt_no DESC LIMIT 1""", (scan_id, scope, finding_id, PROMPT_VERSION))
+                               AND finding_id IS NOT DISTINCT FROM %s::uuid AND prompt_version=%s ORDER BY attempt_no DESC LIMIT 1""", (scan_id, scope, finding_id, prompt_version))
                 previous = cur.fetchone()
                 if previous and previous["status"] == "succeeded" and previous["input_fingerprint"] == digest:
                     return previous
@@ -96,7 +105,7 @@ def generate(scan_id: UUID, finding_id: UUID | None = None):
                                prompt_version,input_fingerprint,input_snapshot,started_at)
                                VALUES (%s,%s,%s,'running',%s,'openai',%s,%s,%s,%s,now())
                                RETURNING analysis_id""",
-                            (scan_id, scope, finding_id, attempt, model, PROMPT_VERSION, digest, Jsonb(snapshot)))
+                            (scan_id, scope, finding_id, attempt, model, prompt_version, digest, Jsonb(snapshot)))
                 analysis_id = cur.fetchone()["analysis_id"]
             conn.commit()
             usage = {}
@@ -108,6 +117,9 @@ def generate(scan_id: UUID, finding_id: UUID | None = None):
                 output = render_output(snapshot, selected)
                 validation = {"evidence_ids": True, "order": True, "allowed_reasons": True,
                               "renderer": "reviewed Korean sentences; no unrestricted model prose"}
+                if snapshot.get("layout") == "narrative-v3":
+                    validation = {"evidence_ids": True, "primary_anchor": True, "section_order": True,
+                                  "renderer": "AI narrative with validated references; semantic claims require evidence review"}
                 status = "succeeded"
             except GenerationError as exc:
                 code = exc.code
@@ -132,9 +144,12 @@ def stale_report(scan_id, row):
     """Do not label old generated explanations as current after facts change."""
     if not row or row["status"] != "succeeded":
         return False
+    from .ai_narrative import VERSION
+    if row.get("scope") == "scan_report" and row["prompt_version"] != VERSION:
+        return True
     if row["prompt_version"] == "scan-evidence-v1":
         return True
-    if row["prompt_version"] != PROMPT_VERSION:
+    if row["prompt_version"] not in (PROMPT_VERSION, VERSION):
         return False
     with connect() as conn:
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")

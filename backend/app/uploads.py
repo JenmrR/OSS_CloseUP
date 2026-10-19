@@ -11,6 +11,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, Query
 from psycopg.rows import dict_row
 
 from .db import connect
+from .priority_view import load_priority, present_findings
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -220,7 +221,7 @@ def get_findings(scan_id: UUID, limit: int = Query(100, ge=1, le=500), offset: i
                         'package_id',p.package_id,'name',p.name,'installed_version',p.installed_version,
                         'lockfile_path',p.lockfile_path,'relationship',p.relationship,
                         'fixed_version_candidates',fp.fixed_version_candidates,
-                        'priority',fp.priority,'recommended_fixed_version',fp.recommended_fixed_version)
+                        'priority',fp.priority,'fix_information',fp.evidence->>'fix_information','recommended_fixed_version',fp.recommended_fixed_version)
                         ORDER BY p.lockfile_path)
                         FROM finding_packages fp JOIN packages p USING(scan_id,package_id)
                         WHERE fp.scan_id=f.scan_id AND fp.finding_id=f.finding_id),'[]'::jsonb) AS packages,
@@ -230,8 +231,11 @@ def get_findings(scan_id: UUID, limit: int = Query(100, ge=1, le=500), offset: i
                     FROM findings f WHERE f.scan_id=%s ORDER BY f.finding_key LIMIT %s OFFSET %s''',
                     (scan_id,limit,offset))
                 items=cur.fetchall()
+            priority_state, priority_result = load_priority(conn, scan_id, scan['tool_status'])
+            items = present_findings(items, priority_state, priority_result)
     except psycopg.Error:
         log.exception('Finding lookup failed')
         raise HTTPException(503,'DB 조회에 실패했습니다.') from None
     return {'scan_id':str(scan_id),'total':total,'limit':limit,'offset':offset,
-            'normalization':scan['tool_status'].get('normalization',{'status':'pending'}),'items':items}
+            'normalization':scan['tool_status'].get('normalization',{'status':'pending'}),
+            'priority_evaluation':priority_state,'items':items}

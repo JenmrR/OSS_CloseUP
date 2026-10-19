@@ -6,7 +6,7 @@ import {
 import {
   STAGES, ACTIVE, stageProgress, computeProgress, stagesDone, scanDuration,
   licenseState, vulnScanFailed, vulnItems, firstLook, priorityComputed,
-  bestPriority, fixSummary, relationLabel, licenseSummary, maintenanceSummary, packageSummary,
+  priorityList, topFindingRank, representativePackage, priorityStateText, fixSummary, relationLabel, licenseSummary, maintenanceSummary, packageSummary,
   findingLabel, parseRoute, routeHash,
 } from './display'
 import AiReport from './AiReport'
@@ -171,17 +171,17 @@ function FirstLook({ vulns, findings, scan, q, onOpen, onTab }) {
   }
   if (!priorityComputed(vulns)) {
     return (
-      <p className="oc-empty">조치 우선순위가 아직 계산되지 않았어요(산정 전). <button type="button" className="oc-link" onClick={() => onTab('findings')}>취약점 탭</button>에서 전체 목록을 볼 수 있어요.</p>
+      <p className="oc-empty">{findings.priority_evaluation?.current_result_available ? '계산은 완료됐지만 등급이 있는 연결 항목이 없습니다. 심각도와 패키지 연결 정보를 확인해 주세요.' : priorityStateText(findings.priority_evaluation)} <button type="button" className="oc-link" onClick={() => onTab('findings')}>취약점 탭</button>에서 전체 목록을 볼 수 있어요.</p>
     )
   }
   const rows = firstLook(vulns).filter((f) => matches(q, findingLabel(f), ...(f.packages || []).map((p) => p.name)))
-  if (rows.length === 0) return <p className="oc-empty">{q ? '검색 결과가 없습니다.' : '우선순위가 높은 항목(P0~P2)이 없습니다. 취약점 탭에서 전체 목록을 볼 수 있어요.'}</p>
+  if (rows.length === 0) return <p className="oc-empty">{q ? '검색 결과가 없습니다.' : '먼저 볼 항목이 없습니다. 취약점 탭에서 전체 목록을 볼 수 있어요.'}</p>
   return (
     <>
       <table className="oc-table">
         <thead><tr><th>순서</th><th>패키지</th><th>식별자</th><th>관계</th><th>수정 정보</th><th>심각도</th><th /></tr></thead>
         <tbody>
-          {rows.map((f, i) => <VulnRow key={f.finding_id} f={f} rank={i + 1} onOpen={onOpen} />)}
+          {rows.map((f) => <VulnRow key={f.finding_id} f={f} rank={topFindingRank(vulns, f.finding_id)} onOpen={onOpen} />)}
         </tbody>
       </table>
       <p className="oc-hint">항목을 누르면 고치는 방법과 근거를 볼 수 있습니다. 순서는 조치 우선순위 규칙 값이며, 심각도를 낮추지 않습니다.</p>
@@ -191,28 +191,30 @@ function FirstLook({ vulns, findings, scan, q, onOpen, onTab }) {
 
 function VulnRow({ f, rank, onOpen }) {
   const packages = Array.isArray(f.packages) ? f.packages : []
-  const first = packages[0]
+  const first = representativePackage(f)
   const fix = fixSummary(first)
   const severity = f.severity || 'UNKNOWN'
-  const priority = f.best_priority || bestPriority(f)
   return (
     <tr className="click" tabIndex={0} title="눌러서 상세 보기"
       onClick={() => onOpen(f.finding_id)} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(f.finding_id) }}>
-      {rank != null && <td className="rank">{String(rank).padStart(2, '0')}<small>{priority}</small></td>}
+      {rank != null && <td className="rank">{rank}위</td>}
       <td className="pkg">{first ? `${first.name}@${first.installed_version}` : '—'}{packages.length > 1 && <span className="muted"> 외 {packages.length - 1}</span>}
         {f.manual_review_required && <span className="oc-tag warn">수동 확인</span>}</td>
       <td className="id">{findingLabel(f)}</td>
       <td>{first ? relationLabel(first.relationship) : '—'}</td>
       <td className={fix.tone === 'muted' ? 'muted' : ''}>{fix.text}</td>
-      {rank == null && <td>{priority || <span className="muted">산정 전</span>}</td>}
       <td><span className="oc-pill"><span className={`oc-dot sev-${severity}`} />{severity}</span></td>
       <td className="go"><Icon name="arrow" size={18} /></td>
     </tr>
   )
 }
 
-function Findings({ vulns, findings, scan, q, onOpen }) {
-  if (!findings) return <Loading />
+function Findings({ vulns, findings, scan, q, onOpen, queryFailed }) {
+  const [priorityFilter, setPriorityFilter] = useState('all')
+  const [sortOrder, setSortOrder] = useState('priority')
+  if (!findings) return queryFailed
+    ? <p className="oc-empty" role="status">취약점 목록을 불러오지 못했습니다. 위의 ‘다시 불러오기’를 눌러 주세요.</p>
+    : <Loading />
   const status = (findings.normalization || {}).status
   if (status !== 'completed' && vulns.length === 0) {
     return <p className="oc-empty">취약점 결과를 정리하는 중입니다 ({label(status)}). 취약점 0건이라는 뜻이 아닙니다.</p>
@@ -223,13 +225,24 @@ function Findings({ vulns, findings, scan, q, onOpen }) {
       ? <p className="oc-empty err">취약점 검사 일부가 실패했습니다. 발견된 항목이 없는 것처럼 보여도 확인하지 못한 취약점이 있을 수 있습니다.</p>
       : <p className="oc-empty">취약점 검사가 정상 완료되었고, 알려진 취약점은 발견되지 않았습니다. 코드에 문제가 없다는 보장은 아닙니다.</p>
   }
-  const rows = vulns.filter((f) => matches(q, findingLabel(f), ...(f.packages || []).map((p) => p.name)))
+  const rows = priorityList(vulns.filter((f) => matches(q, findingLabel(f), ...(f.packages || []).map((p) => p.name))), priorityFilter, sortOrder)
   return (
     <>
+      <div className="oc-priority-controls">
+        <label>조치 우선순위 <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+          <option value="all">전체</option><option value="P0">가장 먼저 확인</option>
+          <option value="P1">이어서 확인</option><option value="P2">다음 조치 계획</option>
+          <option value="P3">낮은 우선순위</option><option value="unranked">미산정·확인 필요</option>
+        </select></label>
+        <label>정렬 <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
+          <option value="priority">우선순위 높은 순</option><option value="original">기존 목록 순</option>
+        </select></label>
+        <span role="status">{rows.length}건</span>
+      </div>
       {scanFailed && <p className="err" style={{ marginBottom: 8 }}>취약점 검사 일부가 실패해 이 목록이 전부가 아닐 수 있습니다.</p>}
-      {rows.length === 0 ? <p className="oc-empty">검색 결과가 없습니다.</p> : (
+      {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 취약점이 없습니다.</p> : (
         <table className="oc-table">
-          <thead><tr><th>패키지</th><th>식별자</th><th>관계</th><th>수정 정보</th><th>우선순위</th><th>심각도</th><th /></tr></thead>
+          <thead><tr><th>패키지</th><th>식별자</th><th>관계</th><th>수정 정보</th><th>심각도</th><th /></tr></thead>
           <tbody>{rows.map((f) => <VulnRow key={f.finding_id} f={f} onOpen={onOpen} />)}</tbody>
         </table>
       )}
@@ -254,7 +267,7 @@ function Licenses({ data, q }) {
       <p className="oc-summary">확인 필요 {review.length}개 · 정보 없음 {unknown.length}개 · 그 외 {external.length - review.length - unknown.length}개</p>
       {review.length + unknown.length === 0 ? (
         <p className="oc-empty">따로 확인을 안내할 라이선스가 없습니다. 패키지에 선언된 정보 기준이며, 법적 검토를 대신하지 않습니다.</p>
-      ) : rows.length === 0 ? <p className="oc-empty">검색 결과가 없습니다.</p> : (
+      ) : rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 취약점이 없습니다.</p> : (
         <table className="oc-table">
           <thead><tr><th>패키지</th><th>관계</th><th>선언 라이선스</th><th>안내</th></tr></thead>
           <tbody>
@@ -289,7 +302,7 @@ function Maintenance({ data, q }) {
   return (
     <>
       <p className="oc-summary">{items.length}개 패키지 · 활동이 낮다고 해서 취약한 것은 아닙니다</p>
-      {rows.length === 0 ? <p className="oc-empty">검색 결과가 없습니다.</p> : (
+      {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 취약점이 없습니다.</p> : (
         <table className="oc-table">
           <thead><tr><th>패키지</th><th>저장소</th><th>최근 커밋</th><th>보관(archived)</th><th>사용 중단</th><th>조회 상태</th></tr></thead>
           <tbody>
@@ -323,7 +336,7 @@ function Packages({ data, q }) {
   return (
     <>
       <p className="oc-summary">외부 의존성 {external.length}개 · 직접 {direct}개 · 간접 {external.length - direct}개 (루트 프로젝트 제외)</p>
-      {rows.length === 0 ? <p className="oc-empty">검색 결과가 없습니다.</p> : (
+      {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 취약점이 없습니다.</p> : (
         <table className="oc-table">
           <thead><tr><th>패키지</th><th>버전</th><th>관계</th><th>라이선스</th><th>설치 경로</th></tr></thead>
           <tbody>
@@ -354,9 +367,10 @@ export default function App() {
   const [maintenance, setMaintenance] = useState(null)
   const [sbom, setSbom] = useState(null)
   const [sbomBusy, setSbomBusy] = useState(false)
-  const [tab, setTab] = useState('first')
+  const [tab, setTab] = useState(() => parseRoute(window.location.hash).section || 'first')
   const [q, setQ] = useState('')
   const [error, setError] = useState(null)
+  const [findingsQueryFailed, setFindingsQueryFailed] = useState(false)
   const timer = useRef(null)
 
   const [reload, setReload] = useState(0)
@@ -369,6 +383,7 @@ export default function App() {
     const stale = () => generation.current !== currentGeneration
 
     async function tick() {
+      setFindingsQueryFailed(false)
       try {
         const current = await getScan(scanId)
         if (stale()) return
@@ -384,13 +399,14 @@ export default function App() {
           setters[index](result.status === 'fulfilled' ? result.value : null)
           if (result.status === 'rejected') errors.push(`${names[index]}: ${result.reason.message}`)
         })
+        setFindingsQueryFailed(results[1].status === 'rejected')
         setError(errors.length ? errors.join(' / ') : null)
         if (ACTIVE.has(current.status)) {
           scheduledTimer = setTimeout(tick, 3000)
           timer.current = scheduledTimer
         }
       } catch (err) {
-        if (!stale()) setError(err.message)
+        if (!stale()) { setError(err.message); setFindingsQueryFailed(true) }
       }
     }
 
@@ -403,6 +419,8 @@ export default function App() {
     const sync = () => {
       const route = parseRoute(window.location.hash)
       setDetailId(route.findingId)
+      setTab(route.section || (route.findingId ? window.history.state?.section || 'findings' : 'first'))
+      setQ('')
       setScanId((current) => {
         const next = route.scanId || ''
         if (next !== current) reset() // 다른 검사로 이동하면 이전 검사 결과를 비운다
@@ -422,7 +440,7 @@ export default function App() {
 
   function openDetail(id) {
     listScroll.current = window.scrollY
-    window.history.pushState({ fromList: true }, '', routeHash(scanId, id))
+    window.history.pushState({ fromList: true, section: tab }, '', routeHash(scanId, id))
     setDetailId(id)
   }
 
@@ -444,7 +462,7 @@ export default function App() {
     generation.current++
     if (timer.current) clearTimeout(timer.current)
     setScan(null); setPackages(null); setFindings(null); setMaintenance(null); setSbom(null)
-    setError(null); setQ('')
+    setError(null); setFindingsQueryFailed(false); setQ('')
   }
 
   function start(id) {
@@ -465,8 +483,13 @@ export default function App() {
   }
 
   function selectTab(key) {
+    if (!scanId) return
+    window.history.pushState(null, '', routeHash(scanId, null, key))
     setTab(key)
-    if (detailId) closeDetail()
+    setDetailId(null)
+    setQ('')
+    listScroll.current = 0
+    window.scrollTo(0, 0)
   }
 
   async function downloadSbomFile() {
@@ -523,6 +546,7 @@ export default function App() {
               key={detailId}
               scanId={scanId}
               scanStatus={scan && scan.status}
+              actionRank={topFindingRank(vulns, detailId)}
               finding={vulns[detailIndex]}
               index={detailIndex}
               total={vulns.length}
@@ -542,7 +566,7 @@ export default function App() {
           <>
             <div className="oc-head">
               <div>
-                <h1>검사 결과</h1>
+                <h1>{tab === 'first' ? '검사 결과' : tabName}</h1>
                 <p>
                   {[root ? [root.name, root.installed_version].filter(Boolean).join(' ') : null,
                     scan ? formatDate(scan.created_at, true) : null,
@@ -554,25 +578,22 @@ export default function App() {
             </div>
 
             <Progress scan={scan} />
-            <SummaryCards packages={packages} vulns={vulns} findings={findings} maintenance={maintenance} scan={scan} />
+            {tab === 'first' && <SummaryCards onNavigate={selectTab} packages={packages} vulns={vulns} findings={findings} maintenance={maintenance} scan={scan} />}
 
+            {tab === 'first' && <>
+            <p className="oc-hint" role="status">{priorityStateText(findings?.priority_evaluation)}{findings?.priority_evaluation?.current_result_available && ` · 심각도 미확인 ${findings.priority_evaluation.summary?.unknown_finding_count ?? 0}건`}</p>
             <div className="oc-row2">
               <AiReport scanId={scanId} scanStatus={scan && scan.status} findings={findings} onFinding={openDetail} />
               <SeverityDonut vulns={vulns} findings={findings} scan={scan} />
             </div>
 
+            </>}
+
             <section className="oc-panel" aria-label={tabName}>
               <div className="oc-phead">
                 <div className="left">
                   <h2 className="oc-ptitle">{tabName}</h2>
-                  <div className="oc-tabs" role="tablist">
-                    {TABS.map(([key, name]) => (
-                      <button key={key} type="button" role="tab" aria-selected={tab === key}
-                        className={tab === key ? 'on' : ''} onClick={() => setTab(key)}>
-                        {name}{counts[key] != null ? ` ${counts[key]}` : ''}
-                      </button>
-                    ))}
-                  </div>
+
                 </div>
                 <label className="oc-search">
                   <Icon name="search" size={18} />
@@ -580,8 +601,8 @@ export default function App() {
                     placeholder="패키지명 또는 CVE 검색" aria-label="패키지명 또는 CVE 검색" />
                 </label>
               </div>
-              {tab === 'first' && <FirstLook vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} onTab={setTab} />}
-              {tab === 'findings' && <Findings vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} />}
+              {tab === 'first' && <FirstLook vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} onTab={selectTab} />}
+              {tab === 'findings' && <Findings queryFailed={findingsQueryFailed} vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} />}
               {tab === 'licenses' && <Licenses data={packages} q={q.trim().toLowerCase()} />}
               {tab === 'maintenance' && <Maintenance data={maintenance} q={q.trim().toLowerCase()} />}
               {tab === 'packages' && <Packages data={packages} q={q.trim().toLowerCase()} />}
