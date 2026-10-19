@@ -20,7 +20,6 @@
   --oc-med: #F0B400;
   --oc-low: #667085;
   --oc-unknown: #A3AEC6;
-  --oc-shadow: 0 2px 10px rgba(124, 141, 181, .12);
   --oc-font: 'Outfit', 'Noto Sans KR', system-ui, sans-serif;
   --oc-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
@@ -55,7 +54,7 @@ html body #root { max-width: none; margin: 0; padding: 0; text-align: left; }
 .oc-logo small { display: block; font-size: 12px; font-weight: 500; color: var(--oc-cyan); }
 .oc-newscan { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; padding: 12px 0;
   border-radius: 10px; background: var(--oc-cyan); color: var(--oc-ink) !important; font-weight: 700; font-size: 15px; }
-.oc-newscan.on { box-shadow: inset 0 0 0 2px #fff; }
+.oc-newscan.on { outline: 2px solid #fff; outline-offset: -2px; }
 .oc-newscan:hover { filter: brightness(1.06); }
 .oc-side .label { padding: 28px 12px 4px; font-size: 11px; font-weight: 600; letter-spacing: .16em; color: #4F6496; }
 .oc-nav { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px;
@@ -86,7 +85,7 @@ html body #root { max-width: none; margin: 0; padding: 0; text-align: left; }
 
 /* 알약(키트의 Status) */
 .oc-pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 8px; background: #fff;
-  box-shadow: var(--oc-shadow); font-size: 12px; font-weight: 500; white-space: nowrap; color: var(--oc-text); }
+  border: 1px solid var(--oc-line); font-size: 12px; font-weight: 500; white-space: nowrap; color: var(--oc-text); }
 .oc-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
 .sev-CRITICAL { background: var(--oc-crit); } .sev-HIGH { background: var(--oc-high); } .sev-MEDIUM { background: var(--oc-med); }
 .sev-LOW { background: var(--oc-low); } .sev-UNKNOWN { background: var(--oc-unknown); }
@@ -97,7 +96,7 @@ html body #root { max-width: none; margin: 0; padding: 0; text-align: left; }
 
 /* 버튼 */
 .oc-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; background: #fff;
-  box-shadow: var(--oc-shadow); font-size: 13px; font-weight: 500; color: var(--oc-text) !important; }
+  border: 1px solid var(--oc-line); font-size: 13px; font-weight: 500; color: var(--oc-text) !important; }
 .oc-btn:disabled { color: #B4C0DA !important; box-shadow: none; }
 .oc-btn.sea { color: var(--oc-sea) !important; }
 .oc-btn.primary { background: var(--oc-sea); color: #fff !important; box-shadow: none; }
@@ -113,7 +112,7 @@ html body #root { max-width: none; margin: 0; padding: 0; text-align: left; }
 .oc-card .top { display: flex; justify-content: space-between; gap: 8px; }
 .oc-card .num { font-size: 28px; font-weight: 600; line-height: 1.5; }
 .oc-card .lab { font-size: 15px; color: #000; }
-.oc-card .ico { width: 44px; height: 44px; border-radius: 12px; background: #fff; box-shadow: var(--oc-shadow);
+.oc-card .ico { width: 44px; height: 44px; border-radius: 12px; background: #fff; border: 1px solid var(--oc-line);
   display: grid; place-items: center; color: var(--oc-sea); flex: none; }
 .oc-card .foot { font-size: 13px; color: var(--oc-muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .oc-card .foot .s { display: inline-flex; align-items: center; gap: 4px; color: var(--oc-text); font-size: 12px; font-weight: 500; }
@@ -138,7 +137,7 @@ html body #root { max-width: none; margin: 0; padding: 0; text-align: left; }
 .oc-firstlist .t small { font-size: 12px; font-weight: 500; color: var(--oc-muted); }
 .oc-firstlist .d { font-size: 13px; color: var(--oc-sub); }
 
-.oc-donut { display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+.oc-donut { align-self: start; display: flex; flex-direction: column; gap: 12px; padding: 20px; }
 .oc-donut .chart { position: relative; width: 176px; height: 176px; margin: 10px auto; }
 .oc-donut .chart svg { transform: rotate(-90deg); }
 .oc-donut .center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
@@ -218,7 +217,7 @@ html body #root { max-width: none; margin: 0; padding: 0; text-align: left; }
 .oc-slot.empty.drag { border-color: var(--oc-cyan); background: #EAF7FE; }
 .oc-slot.selected { border: 1px solid #C9D7F2; }
 .oc-slot.bad { border: 1px solid #F5C2C0; background: #FFF8F8; }
-.oc-slot .ico { width: 44px; height: 44px; border-radius: 12px; background: #fff; box-shadow: var(--oc-shadow); display: grid; place-items: center; color: var(--oc-sea); flex: none; }
+.oc-slot .ico { width: 44px; height: 44px; border-radius: 12px; background: #fff; border: 1px solid var(--oc-line); display: grid; place-items: center; color: var(--oc-sea); flex: none; }
 .oc-slot .fname { font-family: var(--oc-mono); font-weight: 500; font-size: 16px; }
 .oc-slot .shead { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .oc-slot .shead .l { display: flex; align-items: center; gap: 14px; }
@@ -230,7 +229,7 @@ html body #root { max-width: none; margin: 0; padding: 0; text-align: left; }
 .oc-info { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
 .oc-info .oc-panel { padding: 20px; }
 .oc-info .h { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-size: 17px; font-weight: 500; color: #000; }
-.oc-info .h .ico { width: 44px; height: 44px; border-radius: 12px; background: #fff; box-shadow: var(--oc-shadow); display: grid; place-items: center; color: var(--oc-sea); }
+.oc-info .h .ico { width: 44px; height: 44px; border-radius: 12px; background: #fff; border: 1px solid var(--oc-line); display: grid; place-items: center; color: var(--oc-sea); }
 .oc-info li { position: relative; padding-left: 14px; font-size: 13px; color: var(--oc-sub); margin-bottom: 6px; }
 .oc-info li::before { content: ""; position: absolute; left: 0; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--oc-cyan); }
 .oc-tip { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 20px; font-size: 13px; color: var(--oc-sub); }
