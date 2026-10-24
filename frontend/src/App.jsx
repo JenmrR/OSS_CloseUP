@@ -11,6 +11,7 @@ import {
 } from './display'
 import AiReport from './AiReport'
 import FindingDetail from './FindingDetail'
+import PackageDetail from './PackageDetail'
 import Upload from './Upload'
 import { SummaryCards, SeverityDonut } from './Overview'
 import Icon from './Icons'
@@ -160,7 +161,7 @@ function Progress({ scan }) {
 // ── 목록 탭 ──
 function Loading() { return <p className="oc-empty">불러오는 중…</p> }
 
-function FirstLook({ vulns, findings, scan, q, onOpen, onTab }) {
+function FirstLook({ vulns, findings, scan, q, onOpen, onPackage, onTab }) {
   if (!findings) return <Loading />
   const status = (findings.normalization || {}).status
   if (status !== 'completed' && vulns.length === 0) {
@@ -181,13 +182,13 @@ function FirstLook({ vulns, findings, scan, q, onOpen, onTab }) {
   if (rows.length === 0) return <p className="oc-empty">{q ? '검색 결과가 없습니다.' : '먼저 볼 항목이 없습니다. 취약점 탭에서 전체 목록을 볼 수 있어요.'}</p>
   return (
     <>
-      <PackageFindingList groups={rows} onOpen={onOpen} />
-      <p className="oc-hint">패키지를 펼친 뒤 취약점 식별자를 누르면 고치는 방법과 근거를 볼 수 있습니다.</p>
+      <PackageFindingList groups={rows} onOpen={onOpen} onPackage={onPackage} />
+      <p className="oc-hint">패키지 상세에서 AI 설명과 수정 프롬프트를, 취약점 식별자를 누르면 고치는 방법과 근거를 볼 수 있습니다.</p>
     </>
   )
 }
 
-function Findings({ vulns, findings, scan, q, onOpen, queryFailed }) {
+function Findings({ vulns, findings, scan, q, onOpen, onPackage, queryFailed }) {
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [sortOrder, setSortOrder] = useState('priority')
   if (!findings) return queryFailed
@@ -221,7 +222,7 @@ function Findings({ vulns, findings, scan, q, onOpen, queryFailed }) {
       </div>
       {scanFailed && <p className="err" style={{ marginBottom: 8 }}>취약점 검사 일부가 실패해 이 목록이 전부가 아닐 수 있습니다.</p>}
       {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 패키지가 없습니다.</p> : (
-        <PackageFindingList groups={rows} onOpen={onOpen} />
+        <PackageFindingList groups={rows} onOpen={onOpen} onPackage={onPackage} />
       )}
       {unlinked.length > 0 && <section aria-label="패키지 연결 미확인 취약점">
         <h3>패키지 연결 미확인 {unlinked.length}건</h3>
@@ -342,6 +343,7 @@ function Packages({ data, q }) {
 export default function App() {
   const [scanId, setScanId] = useState(() => parseRoute(window.location.hash).scanId || '')
   const [detailId, setDetailId] = useState(() => parseRoute(window.location.hash).findingId)
+  const [pkgRoute, setPkgRoute] = useState(() => parseRoute(window.location.hash).pkg || null)
   const listScroll = useRef(0)
   const [scan, setScan] = useState(null)
   const [packages, setPackages] = useState(null)
@@ -401,6 +403,7 @@ export default function App() {
     const sync = () => {
       const route = parseRoute(window.location.hash)
       setDetailId(route.findingId)
+      setPkgRoute(route.pkg || null)
       setTab(route.section || (route.findingId ? window.history.state?.section || 'findings' : 'first'))
       setQ('')
       setScanId((current) => {
@@ -416,14 +419,23 @@ export default function App() {
 
   // 목록으로 돌아오면 보던 위치로 스크롤을 되돌린다
   useEffect(() => {
-    if (detailId) window.scrollTo(0, 0)
+    if (detailId || pkgRoute) window.scrollTo(0, 0)
     else requestAnimationFrame(() => window.scrollTo(0, listScroll.current))
-  }, [detailId])
+  }, [detailId, pkgRoute])
+
+  function openPackage(name, version) {
+    if (!detailId && !pkgRoute) listScroll.current = window.scrollY
+    const pkg = { name, version }
+    window.history.pushState({ fromList: true, section: tab }, '', routeHash(scanId, null, tab, pkg))
+    setDetailId(null)
+    setPkgRoute(pkg)
+  }
 
   function openDetail(id) {
-    listScroll.current = window.scrollY
+    if (!pkgRoute) listScroll.current = window.scrollY
     window.history.pushState({ fromList: true, section: tab }, '', routeHash(scanId, id))
     setDetailId(id)
+    setPkgRoute(null)
   }
 
   function closeDetail() {
@@ -432,6 +444,7 @@ export default function App() {
     } else {
       window.history.replaceState(null, '', routeHash(scanId) || window.location.pathname)
       setDetailId(null)
+      setPkgRoute(null)
     }
   }
 
@@ -450,6 +463,7 @@ export default function App() {
   function start(id) {
     window.history.pushState(null, '', routeHash(id) || window.location.pathname)
     setDetailId(null)
+    setPkgRoute(null)
     reset()
     setTab('first')
     setReload((value) => value + 1)
@@ -461,6 +475,7 @@ export default function App() {
     window.history.pushState(null, '', window.location.pathname)
     reset()
     setDetailId(null)
+    setPkgRoute(null)
     setScanId('')
   }
 
@@ -469,6 +484,7 @@ export default function App() {
     window.history.pushState(null, '', routeHash(scanId, null, key))
     setTab(key)
     setDetailId(null)
+    setPkgRoute(null)
     setQ('')
     listScroll.current = 0
     window.scrollTo(0, 0)
@@ -493,7 +509,8 @@ export default function App() {
 
   const vulns = vulnItems(findings)
   const detailIndex = detailId ? vulns.findIndex((f) => f.finding_id === detailId) : -1
-  const view = !scanId ? 'upload' : detailId ? 'detail' : 'result'
+  const view = !scanId ? 'upload' : detailId ? 'detail' : pkgRoute ? 'package' : 'result'
+  const pkgGroup = pkgRoute ? packageGroups(vulns).groups.find((g) => g.name === pkgRoute.name && g.version === pkgRoute.version) : null
 
   const firstCount = findings && priorityComputed(vulns) ? Math.min(5, packageGroups(vulns).groups.filter(g => ['P0', 'P1', 'P2'].includes(g.priority)).length) : null
   const counts = {
@@ -509,7 +526,7 @@ export default function App() {
 
   return (
     <div className="oc">
-      <Sidebar view={view} tab={tab} counts={counts} onTab={selectTab} onNewScan={newScan}
+      <Sidebar view={view === 'package' ? 'detail' : view} tab={tab} counts={counts} onTab={selectTab} onNewScan={newScan}
         sbom={sbom} onSbom={downloadSbomFile} sbomBusy={sbomBusy} />
 
       <main className="oc-main">
@@ -544,6 +561,25 @@ export default function App() {
           )
         )}
 
+        {view === 'package' && (
+          pkgGroup ? (
+            <PackageDetail
+              key={`${pkgGroup.name}@${pkgGroup.version}`}
+              scanId={scanId}
+              scanStatus={scan && scan.status}
+              group={pkgGroup}
+              rankLabel={pkgGroup.displayRank ? `${pkgGroup.displayRank}위` : '미산정·확인 필요'}
+              onBack={closeDetail}
+              onFinding={openDetail}
+            />
+          ) : (
+            <section className="oc-panel">
+              <button type="button" className="oc-btn" onClick={closeDetail}>← 목록으로</button>
+              <p className="oc-empty">{findings ? '이 검사에서 해당 패키지의 취약점을 찾을 수 없습니다.' : '불러오는 중…'}</p>
+            </section>
+          )
+        )}
+
         {view === 'result' && (
           <>
             <div className="oc-head">
@@ -565,7 +601,7 @@ export default function App() {
             {tab === 'first' && <>
             <p className="oc-hint" role="status">{priorityStateText(findings?.priority_evaluation)}{findings?.priority_evaluation?.current_result_available && ` · 심각도 미확인 ${findings.priority_evaluation.summary?.unknown_finding_count ?? 0}건`}</p>
             <div className="oc-row2">
-              <AiReport scanId={scanId} scanStatus={scan && scan.status} findings={findings} onFinding={openDetail} />
+              <AiReport scanId={scanId} scanStatus={scan && scan.status} findings={findings} onFinding={openDetail} onPackage={openPackage} />
               <SeverityDonut vulns={vulns} findings={findings} scan={scan} />
             </div>
 
@@ -583,8 +619,8 @@ export default function App() {
                     placeholder="패키지명 또는 CVE 검색" aria-label="패키지명 또는 CVE 검색" />
                 </label>
               </div>
-              {tab === 'first' && <FirstLook vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} onTab={selectTab} />}
-              {tab === 'findings' && <Findings queryFailed={findingsQueryFailed} vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} />}
+              {tab === 'first' && <FirstLook vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} onPackage={openPackage} onTab={selectTab} />}
+              {tab === 'findings' && <Findings queryFailed={findingsQueryFailed} vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} onPackage={openPackage} />}
               {tab === 'licenses' && <Licenses data={packages} q={q.trim().toLowerCase()} />}
               {tab === 'maintenance' && <Maintenance data={maintenance} q={q.trim().toLowerCase()} />}
               {tab === 'packages' && <Packages data={packages} q={q.trim().toLowerCase()} />}

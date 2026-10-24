@@ -9,7 +9,7 @@ def ranged(fixed, introduced='0'):
     return {'value': fixed, 'range': {'type': 'SEMVER', 'events': [{'introduced': introduced}, {'fixed': fixed}]}}
 
 
-def snapshot(severities=('HIGH', 'CRITICAL', 'HIGH'), fixes=('2.5.4', '2.5.6', '2.5.5'), relationship='indirect', extra=0):
+def snapshot(severities=('HIGH', 'CRITICAL', 'HIGH'), fixes=('2.5.4', '2.5.6', '2.5.5'), relationship='indirect', extra=0, other=False, target=None):
     rows = [{'finding_id': str(i), 'package_id': 'p', 'package_name': 'form-data', 'installed_version': '2.3.3',
              'type': 'vulnerability', 'severity': sev, 'relationship': relationship, 'identifiers': [f'CVE-2026-{i}'],
              'evidence': {'normalized': {'evidence': [{'source_tool': 'osv', 'raw': {
@@ -17,6 +17,10 @@ def snapshot(severities=('HIGH', 'CRITICAL', 'HIGH'), fixes=('2.5.4', '2.5.6', '
             for i, sev in enumerate(list(severities) + ['LOW'] * extra)]
     links = [{'finding_id': r['finding_id'], 'package_id': 'p', 'priority': 'P1', 'priority_rule_version': 'priority-v1',
               'has_fix_candidate': True, 'fix_information': 'candidates_available'} for r in reversed(rows)]
+    if other:  # another package ranked above form-data
+        rows.append({'finding_id': 'x', 'package_id': 'ax', 'package_name': 'axios', 'installed_version': '1.10.0',
+                     'type': 'vulnerability', 'severity': 'CRITICAL', 'relationship': 'direct', 'identifiers': [], 'evidence': {}})
+        links.insert(0, {'finding_id': 'x', 'package_id': 'ax', 'priority': 'P0'})
     packages = [{'package_id': 'root', 'name': 'my-app', 'installed_version': '1.0.0', 'relationship': 'root'},
                 {'package_id': 'req', 'name': 'request', 'installed_version': '2.88.2', 'relationship': 'direct'},
                 {'package_id': 'p', 'name': 'form-data', 'installed_version': '2.3.3', 'relationship': relationship}]
@@ -24,9 +28,9 @@ def snapshot(severities=('HIGH', 'CRITICAL', 'HIGH'), fixes=('2.5.4', '2.5.6', '
     if relationship == 'direct':
         edges = [{'parent_package_id': 'root', 'child_package_id': 'p'}]
     fix_list = list(fixes) + [None] * extra
-    candidates = {(r['finding_id'], 'p'): ([ranged(fix_list[i])] if fix_list[i] else []) for i, r in enumerate(rows)}
+    candidates = {(r['finding_id'], 'p'): ([ranged(fix_list[i])] if fix_list[i] else []) for i, r in enumerate(rows) if r['package_id'] == 'p'}
     return build_snapshot(rows, {'link_results': links}, {'current_result_available': True}, packages, edges,
-                          'completed', [], candidates)
+                          'completed', [], candidates, target)
 
 
 def risks(s):
@@ -123,3 +127,20 @@ def test_common_fix_matches_frontend_rules():
     assert common_fix('1.0.0', [[{'value': '1.2.0'}]])['status'] == 'none'
     assert common_fix('0.2.0', [[ranged('0.3.1')]])['major_change'] is True
     assert range_fix('2.3.3', [ranged('2.5.4'), ranged('3.0.4', '3.0.0')]) == '2.5.4'
+
+
+def test_any_package_uses_the_same_structure_with_its_rank():
+    s = snapshot(other=True, target=('form-data', '2.3.3'))
+    out = render_report(s, risks(s))
+    assert out['title'] == '패키지 설명'
+    texts = {p['kind']: p['text'] for p in out['paragraphs']}
+    assert texts['what'].startswith('form-data 2.3.3 패키지는 확인 순서 2위입니다. 취약점이 3건 있고')
+    assert texts['path'].startswith('my-app 프로젝트가 설치한 request 패키지를 통해')
+    report = snapshot(other=True)
+    assert report['package']['name'] == 'axios' and report['package']['rank'] == 1
+
+
+def test_unknown_package_is_404():
+    with pytest.raises(Exception) as err:
+        snapshot(target=('left-pad', '1.0.0'))
+    assert getattr(err.value, 'status_code', None) == 404

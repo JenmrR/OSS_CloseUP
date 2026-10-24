@@ -1,7 +1,7 @@
 import { SEVERITIES, findingLabel, fixSummary } from './display'
 import { commonFixText } from './packageGroups'
 
-function SeverityBadge({ severity, count }) {
+export function SeverityBadge({ severity, count }) {
   const value = SEVERITIES.includes(severity) ? severity : 'UNKNOWN'
   return <span className={`oc-severity-badge oc-severity-${value}`}>
     <span className={`oc-dot sev-${value}`} aria-hidden="true" />
@@ -10,7 +10,7 @@ function SeverityBadge({ severity, count }) {
   </span>
 }
 
-function CommonFix({ fix }) {
+export function CommonFix({ fix }) {
   if (!fix || (fix.status !== 'all' && fix.status !== 'partial')) return <span className="muted">공통 수정 버전 확인 안 됨</span>
   return <span className="oc-common-fix">
     공통 수정 버전 <strong>{fix.version}</strong>
@@ -19,7 +19,7 @@ function CommonFix({ fix }) {
   </span>
 }
 
-export default function PackageFindingList({ groups, onOpen }) {
+export default function PackageFindingList({ groups, onOpen, onPackage }) {
   return <div className="oc-package-groups">
     {groups.map(group => <details className="oc-package-group" key={group.key}>
       <summary>
@@ -30,6 +30,7 @@ export default function PackageFindingList({ groups, onOpen }) {
           <SeverityBadge key={s} severity={s} count={group.counts[s]} />)}</span>
         <CommonFix fix={group.commonFix} />
         <span className="muted">취약점 펼치기</span>
+        {onPackage && <button type="button" className="oc-btn oc-package-open" onClick={(e) => { e.preventDefault(); onPackage(group.name, group.version) }}>패키지 상세</button>}
       </summary>
       <p className="oc-hint">{commonFixText(group)}</p>
       <ul className="oc-group-findings">{group.entries.map(({ finding, packages }, i) =>
