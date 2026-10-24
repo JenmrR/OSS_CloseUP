@@ -312,13 +312,13 @@ button.oc-card:focus-visible { outline: 2px solid var(--oc-sea); outline-offset:
 @media (max-width: 760px) { .oc-panel.oc-cards { row-gap: 0; } .oc-cards button.oc-card:nth-child(3) { border-left: 0; } }
 
 /* Package groups: native disclosure supports keyboard and touch. */
-.oc-package-group { border: 1px solid var(--oc-line); border-radius: 10px; margin: 12px 0; padding: 14px; }
-.oc-package-group summary { cursor: pointer; line-height: 2; overflow-wrap: anywhere; }
-.oc-package-group summary > * { margin-right: 12px; }
+.oc-package-group { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; color: inherit; background: #fff; border: 1px solid var(--oc-line); border-radius: 10px; margin: 12px 0; padding: 14px 16px; cursor: pointer; line-height: 2; overflow-wrap: anywhere; }
+.oc-package-group:hover { border-color: var(--oc-sea); background: #F5F9FF; }
+.oc-package-go { margin-left: auto; font-size: 20px; color: var(--oc-sea); }
 .oc-group-counts { display: inline-flex; flex-wrap: wrap; gap: 10px; }
 .oc-group-findings { padding-left: 20px; }
 .oc-group-findings li { padding: 10px 0; border-top: 1px solid var(--oc-line); display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
-.oc-package-group summary:focus-visible { outline: 2px solid var(--oc-cyan); outline-offset: 4px; }
+.oc-package-group:focus-visible { outline: 2px solid var(--oc-cyan); outline-offset: 2px; }
 
 .oc-severity-badge { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; line-height: 1.6; white-space: nowrap; vertical-align: middle; }
 .oc-severity-CRITICAL { background: #fff0ee; color: #a51c17; }
@@ -329,5 +329,4 @@ button.oc-card:focus-visible { outline: 2px solid var(--oc-sea); outline-offset:
 .oc-severity-count { font-variant-numeric: tabular-nums; }
 .oc-common-fix { white-space: nowrap; }
 .oc-common-fix strong { color: var(--oc-sea); }
-.oc-package-open { padding: 2px 10px; font-size: 12px; }
 .oc-fix-prompt { white-space: pre-wrap; word-break: break-word; background: #F5F9FF; border: 1px solid var(--oc-line); border-radius: 8px; padding: 14px; font-size: 13px; line-height: 1.6; max-height: 420px; overflow: auto; }

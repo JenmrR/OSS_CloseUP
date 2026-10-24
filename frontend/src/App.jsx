@@ -161,7 +161,7 @@ function Progress({ scan }) {
 // ── 목록 탭 ──
 function Loading() { return <p className="oc-empty">불러오는 중…</p> }
 
-function FirstLook({ vulns, findings, scan, q, onOpen, onPackage, onTab }) {
+function FirstLook({ vulns, findings, scan, q, onPackage, onTab }) {
   if (!findings) return <Loading />
   const status = (findings.normalization || {}).status
   if (status !== 'completed' && vulns.length === 0) {
@@ -182,8 +182,8 @@ function FirstLook({ vulns, findings, scan, q, onOpen, onPackage, onTab }) {
   if (rows.length === 0) return <p className="oc-empty">{q ? '검색 결과가 없습니다.' : '먼저 볼 항목이 없습니다. 취약점 탭에서 전체 목록을 볼 수 있어요.'}</p>
   return (
     <>
-      <PackageFindingList groups={rows} onOpen={onOpen} onPackage={onPackage} />
-      <p className="oc-hint">패키지 상세에서 AI 설명과 수정 프롬프트를, 취약점 식별자를 누르면 고치는 방법과 근거를 볼 수 있습니다.</p>
+      <PackageFindingList groups={rows} onPackage={onPackage} />
+      <p className="oc-hint">패키지를 누르면 AI 설명, 수정 프롬프트, 취약점 목록을 볼 수 있습니다.</p>
     </>
   )
 }
@@ -222,14 +222,14 @@ function Findings({ vulns, findings, scan, q, onOpen, onPackage, queryFailed }) 
       </div>
       {scanFailed && <p className="err" style={{ marginBottom: 8 }}>취약점 검사 일부가 실패해 이 목록이 전부가 아닐 수 있습니다.</p>}
       {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 패키지가 없습니다.</p> : (
-        <PackageFindingList groups={rows} onOpen={onOpen} onPackage={onPackage} />
+        <PackageFindingList groups={rows} onPackage={onPackage} />
       )}
       {unlinked.length > 0 && <section aria-label="패키지 연결 미확인 취약점">
         <h3>패키지 연결 미확인 {unlinked.length}건</h3>
         <p className="oc-hint">패키지 필터와 별도로 표시합니다. 연결 정보가 없어도 취약점은 유지됩니다.</p>
         {unlinked.map(f => <p key={f.finding_id}><button type="button" className="oc-link" onClick={() => onOpen(f.finding_id)}>{findingLabel(f)} 상세 보기</button></p>)}
       </section>}
-      <p className="oc-hint">패키지를 펼쳐 개별 취약점의 상세와 근거를 확인하세요. 심각도는 검사 엔진 값을 그대로 씁니다. 조치 우선순위는 별도 규칙으로 계산하며 심각도를 낮추지 않습니다.</p>
+      <p className="oc-hint">패키지를 누르면 개별 취약점과 고치는 방법을 확인할 수 있습니다. 심각도는 검사 엔진 값을 그대로 씁니다. 조치 우선순위는 별도 규칙으로 계산하며 심각도를 낮추지 않습니다.</p>
     </>
   )
 }
@@ -619,7 +619,7 @@ export default function App() {
                     placeholder="패키지명 또는 CVE 검색" aria-label="패키지명 또는 CVE 검색" />
                 </label>
               </div>
-              {tab === 'first' && <FirstLook vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} onPackage={openPackage} onTab={selectTab} />}
+              {tab === 'first' && <FirstLook vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onPackage={openPackage} onTab={selectTab} />}
               {tab === 'findings' && <Findings queryFailed={findingsQueryFailed} vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} onPackage={openPackage} />}
               {tab === 'licenses' && <Licenses data={packages} q={q.trim().toLowerCase()} />}
               {tab === 'maintenance' && <Maintenance data={maintenance} q={q.trim().toLowerCase()} />}

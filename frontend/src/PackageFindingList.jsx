@@ -1,5 +1,4 @@
-import { SEVERITIES, findingLabel, fixSummary } from './display'
-import { commonFixText } from './packageGroups'
+import { SEVERITIES } from './display'
 
 export function SeverityBadge({ severity, count }) {
   const value = SEVERITIES.includes(severity) ? severity : 'UNKNOWN'
@@ -19,27 +18,18 @@ export function CommonFix({ fix }) {
   </span>
 }
 
-export default function PackageFindingList({ groups, onOpen, onPackage }) {
+// 패키지 한 줄을 누르면 바로 패키지 상세로 간다. 개별 취약점은 패키지 상세에서 본다.
+export default function PackageFindingList({ groups, onPackage }) {
   return <div className="oc-package-groups">
-    {groups.map(group => <details className="oc-package-group" key={group.key}>
-      <summary>
-        <strong>{group.name}@{group.version}</strong>
-        <span className="oc-pill">{group.displayRank ? `${group.displayRank}위` : '미산정·확인 필요'}</span>
-        <span>{group.entries.length}건</span>
-        <span className="oc-group-counts">{SEVERITIES.filter(s => group.counts[s]).map(s =>
-          <SeverityBadge key={s} severity={s} count={group.counts[s]} />)}</span>
-        <CommonFix fix={group.commonFix} />
-        <span className="muted">취약점 펼치기</span>
-        {onPackage && <button type="button" className="oc-btn oc-package-open" onClick={(e) => { e.preventDefault(); onPackage(group.name, group.version) }}>패키지 상세</button>}
-      </summary>
-      <p className="oc-hint">{commonFixText(group)}</p>
-      <ul className="oc-group-findings">{group.entries.map(({ finding, packages }, i) =>
-        <li key={finding.finding_id || i}>
-          <button type="button" className="oc-link" aria-label={`${findingLabel(finding)} 상세 열기`} disabled={!finding.finding_id} onClick={() => onOpen(finding.finding_id)}>{findingLabel(finding)}</button>
-          <SeverityBadge severity={finding.severity} />
-          {finding.manual_review_required && <span className="oc-tag warn">수동 확인</span>}
-          <span className="muted">{[...new Set(packages.map(p => fixSummary(p).text))].join(' · ')}</span>
-        </li>)}</ul>
-    </details>)}
+    {groups.map(group => <button type="button" className="oc-package-group" key={group.key}
+      aria-label={`${group.name}@${group.version} 패키지 상세 열기`} onClick={() => onPackage(group.name, group.version)}>
+      <strong>{group.name}@{group.version}</strong>
+      <span className="oc-pill">{group.displayRank ? `${group.displayRank}위` : '미산정·확인 필요'}</span>
+      <span>{group.entries.length}건</span>
+      <span className="oc-group-counts">{SEVERITIES.filter(s => group.counts[s]).map(s =>
+        <SeverityBadge key={s} severity={s} count={group.counts[s]} />)}</span>
+      <CommonFix fix={group.commonFix} />
+      <span className="oc-package-go" aria-hidden="true">›</span>
+    </button>)}
   </div>
 }
