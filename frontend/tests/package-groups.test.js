@@ -96,3 +96,14 @@ test('major and 0.x minor changes are flagged; indirect packages mention parent 
   assert.match(commonFixText(indirect), /overrides/)
   assert.match(commonFixText(major), /호환성/)
 })
+test('advisories with no known fix stay uncovered instead of blocking the common version', () => {
+  const lastAffected = { value: null, range: { type: 'SEMVER', events: [{ introduced: '4.0.0' }, { last_affected: '4.17.23' }] } }
+  const { groups } = packageGroups([
+    finding('a', [fixLink('4.17.15', [ranged('0', '4.17.21')])]),
+    finding('b', [fixLink('4.17.15', [lastAffected])]),
+  ])
+  const fix = groups[0].commonFix
+  assert.equal(fix.status, 'partial')
+  assert.equal(fix.version, '4.17.21')
+  assert.equal(fix.covered, 1)
+})

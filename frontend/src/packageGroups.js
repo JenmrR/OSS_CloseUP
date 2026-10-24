@@ -102,8 +102,9 @@ export function commonFixVersion(group) {
   const version = targets.sort((a, b) => compareSemver(a, b)).at(-1)
   const checks = rows.map(r => affectedBy(version, r.candidates))
   const result = { version, total, missing, unverified, majorChange: majorChange(installed, version) }
-  if (checks.some(x => x === true)) return { ...result, status: 'conflict', covered: 0 }
-  // 범위로 확인된 경우만 해결로 센다. 수정 정보가 없거나 범위를 읽을 수 없으면 세지 않는다.
+  // 수정 버전이 확인된 취약점에 후보가 걸리면 공통 버전을 정할 수 없다.
+  if (rows.some((r, i) => r.target && checks[i] === true)) return { ...result, status: 'conflict', covered: 0 }
+  // 범위로 확인된 경우만 해결로 센다. 수정 버전이 알려지지 않은 취약점은 해결로 세지 않는다.
   const covered = checks.filter(x => x === false).length
   return { ...result, status: covered === total ? 'all' : 'partial', covered }
 }
