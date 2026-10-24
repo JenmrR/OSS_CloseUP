@@ -117,9 +117,9 @@ def generate(scan_id: UUID, finding_id: UUID | None = None):
                 output = render_output(snapshot, selected)
                 validation = {"evidence_ids": True, "order": True, "allowed_reasons": True,
                               "renderer": "reviewed Korean sentences; no unrestricted model prose"}
-                if snapshot.get("layout") == "narrative-v3":
-                    validation = {"evidence_ids": True, "primary_anchor": True, "section_order": True,
-                                  "renderer": "AI narrative with validated references; semantic claims require evidence review"}
+                if snapshot.get("layout") == "package-v1":
+                    validation = {"evidence_ids": True, "order": True, "forbidden_terms": True,
+                                  "renderer": "server-written package facts; model writes plain-language risk sentences only"}
                 status = "succeeded"
             except GenerationError as exc:
                 code = exc.code
