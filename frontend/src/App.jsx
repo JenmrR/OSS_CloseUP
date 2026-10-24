@@ -182,7 +182,7 @@ function FirstLook({ vulns, findings, scan, q, onOpen, onTab }) {
   return (
     <>
       <PackageFindingList groups={rows} onOpen={onOpen} />
-      <p className="oc-hint">패키지를 펼친 뒤 취약점의 상세 보기를 누르면 고치는 방법과 근거를 볼 수 있습니다.</p>
+      <p className="oc-hint">패키지를 펼친 뒤 취약점 식별자를 누르면 고치는 방법과 근거를 볼 수 있습니다.</p>
     </>
   )
 }

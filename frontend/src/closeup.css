@@ -319,3 +319,11 @@ button.oc-card:focus-visible { outline: 2px solid var(--oc-sea); outline-offset:
 .oc-group-findings { padding-left: 20px; }
 .oc-group-findings li { padding: 10px 0; border-top: 1px solid var(--oc-line); display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
 .oc-package-group summary:focus-visible { outline: 2px solid var(--oc-cyan); outline-offset: 4px; }
+
+.oc-severity-badge { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; line-height: 1.6; white-space: nowrap; vertical-align: middle; }
+.oc-severity-CRITICAL { background: #fff0ee; color: #a51c17; }
+.oc-severity-HIGH { background: #fff3e8; color: #a63d08; }
+.oc-severity-MEDIUM { background: #fff8d9; color: #806000; }
+.oc-severity-LOW { background: #f0f2f6; color: #475467; }
+.oc-severity-UNKNOWN { background: #f2f0f8; color: #615575; }
+.oc-severity-count { font-variant-numeric: tabular-nums; }
