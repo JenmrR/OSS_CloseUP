@@ -327,3 +327,5 @@ button.oc-card:focus-visible { outline: 2px solid var(--oc-sea); outline-offset:
 .oc-severity-LOW { background: #f0f2f6; color: #475467; }
 .oc-severity-UNKNOWN { background: #f2f0f8; color: #615575; }
 .oc-severity-count { font-variant-numeric: tabular-nums; }
+.oc-common-fix { white-space: nowrap; }
+.oc-common-fix strong { color: var(--oc-sea); }

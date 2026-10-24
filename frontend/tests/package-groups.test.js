@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { packageGroups, selectPackageGroups } from '../src/packageGroups.js'
+import { commonFixText, packageGroups, selectPackageGroups } from '../src/packageGroups.js'
 
 const link = (name, version = '1', priority = 'P1', rank = 0) =>
   ({ name, installed_version: version, priority, priority_rank: rank })
@@ -48,4 +48,51 @@ test('display ranks are global package positions, preserved after search and fil
   assert.deepEqual(groups.map(g => g.displayRank), [1, 2, 3, undefined])
   assert.equal(selectPackageGroups(groups, 'second')[0].displayRank, 2)
   assert.equal(selectPackageGroups(groups, '', 'P1')[0].displayRank, 3)
+})
+
+const ranged = (introduced, fixed) => ({ value: fixed, range: { type: 'SEMVER', events: [{ introduced }, { fixed }] } })
+const fixLink = (version, candidates, relationship = 'direct') =>
+  ({ name: 'pkg', installed_version: version, priority: 'P1', priority_rank: 0, relationship, fixed_version_candidates: candidates })
+
+test('common fix is the highest confirmed fix that clears every range, not the latest release', () => {
+  const { groups } = packageGroups([
+    finding('a', [fixLink('2.3.3', [ranged('0', '2.5.4')])]),
+    finding('b', [fixLink('2.3.3', [ranged('0', '2.5.6')])]),
+  ])
+  assert.deepEqual(groups[0].commonFix, { version: '2.5.6', total: 2, missing: 0, unverified: 0, majorChange: false, status: 'all', covered: 2 })
+})
+test('a candidate that falls inside another advisory range is rejected', () => {
+  const { groups } = packageGroups([
+    finding('a', [fixLink('1.0.0', [ranged('0', '1.2.0')])]),
+    finding('b', [fixLink('1.0.0', [ranged('0', '1.0.5'), ranged('1.1.0', '1.3.0')])]),
+  ])
+  assert.equal(groups[0].commonFix.status, 'conflict')
+  assert.equal(groups[0].commonFix.version, '1.2.0')
+})
+test('missing fix information makes the result partial, never all', () => {
+  const { groups } = packageGroups([
+    finding('a', [fixLink('1.0.0', [ranged('0', '1.4.0')])]),
+    finding('b', [fixLink('1.0.0', [])]),
+  ])
+  const fix = groups[0].commonFix
+  assert.equal(fix.status, 'partial')
+  assert.equal(fix.covered, 1)
+  assert.equal(fix.missing, 1)
+})
+test('no confirmed range gives none; open-ended ranges count as affected', () => {
+  assert.equal(packageGroups([finding('a', [fixLink('1.0.0', ['1.2.0'])])]).groups[0].commonFix.status, 'none')
+  const open = { value: '9.9.9', range: { type: 'SEMVER', events: [{ introduced: '1.5.0' }] } }
+  const { groups } = packageGroups([
+    finding('a', [fixLink('1.0.0', [ranged('0', '1.6.0')])]),
+    finding('b', [fixLink('1.0.0', [ranged('0', '1.1.0'), open])]),
+  ])
+  assert.equal(groups[0].commonFix.status, 'conflict')
+})
+test('major and 0.x minor changes are flagged; indirect packages mention parent updates', () => {
+  const major = packageGroups([finding('a', [fixLink('1.9.0', [ranged('0', '2.0.1')])])]).groups[0]
+  assert.equal(major.commonFix.majorChange, true)
+  assert.equal(packageGroups([finding('a', [fixLink('0.2.0', [ranged('0', '0.3.1')])])]).groups[0].commonFix.majorChange, true)
+  const indirect = packageGroups([finding('a', [fixLink('2.3.3', [ranged('0', '2.5.4')], 'indirect')])]).groups[0]
+  assert.match(commonFixText(indirect), /overrides/)
+  assert.match(commonFixText(major), /호환성/)
 })
