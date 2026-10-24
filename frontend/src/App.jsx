@@ -222,14 +222,14 @@ function Findings({ vulns, findings, scan, q, onOpen, onPackage, queryFailed }) 
       </div>
       {scanFailed && <p className="err" style={{ marginBottom: 8 }}>취약점 검사 일부가 실패해 이 목록이 전부가 아닐 수 있습니다.</p>}
       {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 패키지가 없습니다.</p> : (
-        <PackageFindingList groups={rows} onPackage={onPackage} />
+        <PackageFindingList groups={rows} onPackage={onPackage} onOpen={onOpen} showFindings />
       )}
       {unlinked.length > 0 && <section aria-label="패키지 연결 미확인 취약점">
         <h3>패키지 연결 미확인 {unlinked.length}건</h3>
         <p className="oc-hint">패키지 필터와 별도로 표시합니다. 연결 정보가 없어도 취약점은 유지됩니다.</p>
         {unlinked.map(f => <p key={f.finding_id}><button type="button" className="oc-link" onClick={() => onOpen(f.finding_id)}>{findingLabel(f)} 상세 보기</button></p>)}
       </section>}
-      <p className="oc-hint">패키지를 누르면 개별 취약점과 고치는 방법을 확인할 수 있습니다. 심각도는 검사 엔진 값을 그대로 씁니다. 조치 우선순위는 별도 규칙으로 계산하며 심각도를 낮추지 않습니다.</p>
+      <p className="oc-hint">패키지를 누르면 패키지 상세를, 취약점 식별자를 누르면 고치는 방법과 근거를 볼 수 있습니다. 심각도는 검사 엔진 값을 그대로 씁니다. 조치 우선순위는 별도 규칙으로 계산하며 심각도를 낮추지 않습니다.</p>
     </>
   )
 }
