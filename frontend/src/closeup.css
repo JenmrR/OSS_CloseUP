@@ -310,3 +310,12 @@ button.oc-card:focus-visible { outline: 2px solid var(--oc-sea); outline-offset:
 .oc-priority-controls label { display: flex; gap: 8px; align-items: center; }
 .oc-priority-controls select { padding: 8px 10px; border: 1px solid var(--oc-line); border-radius: 8px; background: #fff; color: inherit; font: inherit; }
 @media (max-width: 760px) { .oc-panel.oc-cards { row-gap: 0; } .oc-cards button.oc-card:nth-child(3) { border-left: 0; } }
+
+/* Package groups: native disclosure supports keyboard and touch. */
+.oc-package-group { border: 1px solid var(--oc-line); border-radius: 10px; margin: 12px 0; padding: 14px; }
+.oc-package-group summary { cursor: pointer; line-height: 2; overflow-wrap: anywhere; }
+.oc-package-group summary > * { margin-right: 12px; }
+.oc-group-counts { display: inline-flex; flex-wrap: wrap; gap: 10px; }
+.oc-group-findings { padding-left: 20px; }
+.oc-group-findings li { padding: 10px 0; border-top: 1px solid var(--oc-line); display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
+.oc-package-group summary:focus-visible { outline: 2px solid var(--oc-cyan); outline-offset: 4px; }

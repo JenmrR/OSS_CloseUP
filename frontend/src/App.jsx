@@ -5,8 +5,8 @@ import {
 } from './api'
 import {
   STAGES, ACTIVE, stageProgress, computeProgress, stagesDone, scanDuration,
-  licenseState, vulnScanFailed, vulnItems, firstLook, priorityComputed,
-  priorityList, topFindingRank, representativePackage, priorityStateText, fixSummary, relationLabel, licenseSummary, maintenanceSummary, packageSummary,
+  licenseState, vulnScanFailed, vulnItems, priorityComputed,
+  priorityStateText, relationLabel, licenseSummary, maintenanceSummary, packageSummary,
   findingLabel, parseRoute, routeHash,
 } from './display'
 import AiReport from './AiReport'
@@ -14,6 +14,8 @@ import FindingDetail from './FindingDetail'
 import Upload from './Upload'
 import { SummaryCards, SeverityDonut } from './Overview'
 import Icon from './Icons'
+import PackageFindingList from './PackageFindingList'
+import { packageGroups, selectPackageGroups } from './packageGroups'
 
 const STATUS_LABEL = {
   pending: '대기', queued: '대기', running: '진행 중', completed: '완료',
@@ -174,38 +176,14 @@ function FirstLook({ vulns, findings, scan, q, onOpen, onTab }) {
       <p className="oc-empty">{findings.priority_evaluation?.current_result_available ? '계산은 완료됐지만 등급이 있는 연결 항목이 없습니다. 심각도와 패키지 연결 정보를 확인해 주세요.' : priorityStateText(findings.priority_evaluation)} <button type="button" className="oc-link" onClick={() => onTab('findings')}>취약점 탭</button>에서 전체 목록을 볼 수 있어요.</p>
     )
   }
-  const rows = firstLook(vulns).filter((f) => matches(q, findingLabel(f), ...(f.packages || []).map((p) => p.name)))
+  const top = selectPackageGroups(packageGroups(vulns).groups).filter(g => ['P0', 'P1', 'P2'].includes(g.priority)).slice(0, 5)
+  const rows = selectPackageGroups(top, q)
   if (rows.length === 0) return <p className="oc-empty">{q ? '검색 결과가 없습니다.' : '먼저 볼 항목이 없습니다. 취약점 탭에서 전체 목록을 볼 수 있어요.'}</p>
   return (
     <>
-      <table className="oc-table">
-        <thead><tr><th>순서</th><th>패키지</th><th>식별자</th><th>관계</th><th>수정 정보</th><th>심각도</th><th /></tr></thead>
-        <tbody>
-          {rows.map((f) => <VulnRow key={f.finding_id} f={f} rank={topFindingRank(vulns, f.finding_id)} onOpen={onOpen} />)}
-        </tbody>
-      </table>
-      <p className="oc-hint">항목을 누르면 고치는 방법과 근거를 볼 수 있습니다. 순서는 조치 우선순위 규칙 값이며, 심각도를 낮추지 않습니다.</p>
+      <PackageFindingList groups={rows} onOpen={onOpen} />
+      <p className="oc-hint">패키지를 펼친 뒤 취약점의 상세 보기를 누르면 고치는 방법과 근거를 볼 수 있습니다.</p>
     </>
-  )
-}
-
-function VulnRow({ f, rank, onOpen }) {
-  const packages = Array.isArray(f.packages) ? f.packages : []
-  const first = representativePackage(f)
-  const fix = fixSummary(first)
-  const severity = f.severity || 'UNKNOWN'
-  return (
-    <tr className="click" tabIndex={0} title="눌러서 상세 보기"
-      onClick={() => onOpen(f.finding_id)} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(f.finding_id) }}>
-      {rank != null && <td className="rank">{rank}위</td>}
-      <td className="pkg">{first ? `${first.name}@${first.installed_version}` : '—'}{packages.length > 1 && <span className="muted"> 외 {packages.length - 1}</span>}
-        {f.manual_review_required && <span className="oc-tag warn">수동 확인</span>}</td>
-      <td className="id">{findingLabel(f)}</td>
-      <td>{first ? relationLabel(first.relationship) : '—'}</td>
-      <td className={fix.tone === 'muted' ? 'muted' : ''}>{fix.text}</td>
-      <td><span className="oc-pill"><span className={`oc-dot sev-${severity}`} />{severity}</span></td>
-      <td className="go"><Icon name="arrow" size={18} /></td>
-    </tr>
   )
 }
 
@@ -225,7 +203,9 @@ function Findings({ vulns, findings, scan, q, onOpen, queryFailed }) {
       ? <p className="oc-empty err">취약점 검사 일부가 실패했습니다. 발견된 항목이 없는 것처럼 보여도 확인하지 못한 취약점이 있을 수 있습니다.</p>
       : <p className="oc-empty">취약점 검사가 정상 완료되었고, 알려진 취약점은 발견되지 않았습니다. 코드에 문제가 없다는 보장은 아닙니다.</p>
   }
-  const rows = priorityList(vulns.filter((f) => matches(q, findingLabel(f), ...(f.packages || []).map((p) => p.name))), priorityFilter, sortOrder)
+  const grouped = packageGroups(vulns)
+  const rows = selectPackageGroups(grouped.groups, q, priorityFilter, sortOrder)
+  const unlinked = grouped.unlinked.filter(f => matches(q, findingLabel(f)))
   return (
     <>
       <div className="oc-priority-controls">
@@ -237,16 +217,18 @@ function Findings({ vulns, findings, scan, q, onOpen, queryFailed }) {
         <label>정렬 <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
           <option value="priority">우선순위 높은 순</option><option value="original">기존 목록 순</option>
         </select></label>
-        <span role="status">{rows.length}건</span>
+        <span role="status">{rows.length}개 패키지 · 패키지–취약점 연결 {rows.reduce((n, g) => n + g.entries.length, 0)}건</span>
       </div>
       {scanFailed && <p className="err" style={{ marginBottom: 8 }}>취약점 검사 일부가 실패해 이 목록이 전부가 아닐 수 있습니다.</p>}
-      {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 취약점이 없습니다.</p> : (
-        <table className="oc-table">
-          <thead><tr><th>패키지</th><th>식별자</th><th>관계</th><th>수정 정보</th><th>심각도</th><th /></tr></thead>
-          <tbody>{rows.map((f) => <VulnRow key={f.finding_id} f={f} onOpen={onOpen} />)}</tbody>
-        </table>
+      {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 패키지가 없습니다.</p> : (
+        <PackageFindingList groups={rows} onOpen={onOpen} />
       )}
-      <p className="oc-hint">행을 누르면 고치는 방법과 근거를 볼 수 있습니다. 심각도는 검사 엔진 값을 그대로 씁니다. 조치 우선순위는 별도 규칙으로 계산하며 심각도를 낮추지 않습니다.</p>
+      {unlinked.length > 0 && <section aria-label="패키지 연결 미확인 취약점">
+        <h3>패키지 연결 미확인 {unlinked.length}건</h3>
+        <p className="oc-hint">패키지 필터와 별도로 표시합니다. 연결 정보가 없어도 취약점은 유지됩니다.</p>
+        {unlinked.map(f => <p key={f.finding_id}><button type="button" className="oc-link" onClick={() => onOpen(f.finding_id)}>{findingLabel(f)} 상세 보기</button></p>)}
+      </section>}
+      <p className="oc-hint">패키지를 펼쳐 개별 취약점의 상세와 근거를 확인하세요. 심각도는 검사 엔진 값을 그대로 씁니다. 조치 우선순위는 별도 규칙으로 계산하며 심각도를 낮추지 않습니다.</p>
     </>
   )
 }
@@ -267,7 +249,7 @@ function Licenses({ data, q }) {
       <p className="oc-summary">확인 필요 {review.length}개 · 정보 없음 {unknown.length}개 · 그 외 {external.length - review.length - unknown.length}개</p>
       {review.length + unknown.length === 0 ? (
         <p className="oc-empty">따로 확인을 안내할 라이선스가 없습니다. 패키지에 선언된 정보 기준이며, 법적 검토를 대신하지 않습니다.</p>
-      ) : rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 취약점이 없습니다.</p> : (
+      ) : rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 패키지가 없습니다.</p> : (
         <table className="oc-table">
           <thead><tr><th>패키지</th><th>관계</th><th>선언 라이선스</th><th>안내</th></tr></thead>
           <tbody>
@@ -302,7 +284,7 @@ function Maintenance({ data, q }) {
   return (
     <>
       <p className="oc-summary">{items.length}개 패키지 · 활동이 낮다고 해서 취약한 것은 아닙니다</p>
-      {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 취약점이 없습니다.</p> : (
+      {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 패키지가 없습니다.</p> : (
         <table className="oc-table">
           <thead><tr><th>패키지</th><th>저장소</th><th>최근 커밋</th><th>보관(archived)</th><th>사용 중단</th><th>조회 상태</th></tr></thead>
           <tbody>
@@ -336,7 +318,7 @@ function Packages({ data, q }) {
   return (
     <>
       <p className="oc-summary">외부 의존성 {external.length}개 · 직접 {direct}개 · 간접 {external.length - direct}개 (루트 프로젝트 제외)</p>
-      {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 취약점이 없습니다.</p> : (
+      {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 패키지가 없습니다.</p> : (
         <table className="oc-table">
           <thead><tr><th>패키지</th><th>버전</th><th>관계</th><th>라이선스</th><th>설치 경로</th></tr></thead>
           <tbody>
@@ -513,7 +495,7 @@ export default function App() {
   const detailIndex = detailId ? vulns.findIndex((f) => f.finding_id === detailId) : -1
   const view = !scanId ? 'upload' : detailId ? 'detail' : 'result'
 
-  const firstCount = findings && priorityComputed(vulns) ? firstLook(vulns).length : null
+  const firstCount = findings && priorityComputed(vulns) ? Math.min(5, packageGroups(vulns).groups.filter(g => ['P0', 'P1', 'P2'].includes(g.priority)).length) : null
   const counts = {
     first: firstCount,
     findings: findings ? vulns.length : null,
@@ -546,7 +528,7 @@ export default function App() {
               key={detailId}
               scanId={scanId}
               scanStatus={scan && scan.status}
-              actionRank={topFindingRank(vulns, detailId)}
+              actionRank={null}
               finding={vulns[detailIndex]}
               index={detailIndex}
               total={vulns.length}
