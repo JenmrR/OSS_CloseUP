@@ -37,3 +37,15 @@ test('identifier search retains full package counts and all related findings', (
   assert.equal(rows[0].entries.length, 2)
   assert.equal(selectPackageGroups(groups, 'missing').length, 0)
 })
+
+test('display ranks are global package positions, preserved after search and filtering', () => {
+  const { groups } = packageGroups([
+    finding('a', [link('first', '1', 'P0', 0)]),
+    finding('b', [link('second', '1', 'P0', 1)]),
+    finding('c', [link('third', '1', 'P1', 2)]),
+    finding('d', [link('unknown', '1', null)]),
+  ])
+  assert.deepEqual(groups.map(g => g.displayRank), [1, 2, 3, undefined])
+  assert.equal(selectPackageGroups(groups, 'second')[0].displayRank, 2)
+  assert.equal(selectPackageGroups(groups, '', 'P1')[0].displayRank, 3)
+})

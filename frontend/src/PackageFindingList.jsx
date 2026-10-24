@@ -5,7 +5,7 @@ export default function PackageFindingList({ groups, onOpen }) {
     {groups.map(group => <details className="oc-package-group" key={group.key}>
       <summary>
         <strong>{group.name}@{group.version}</strong>
-        <span className="oc-pill">{group.priority || '미산정·확인 필요'}</span>
+        <span className="oc-pill">{group.displayRank ? `${group.displayRank}위` : '미산정·확인 필요'}</span>
         <span>{group.entries.length}건</span>
         <span className="oc-group-counts">{SEVERITIES.filter(s => group.counts[s]).map(s =>
           <span key={s}><span className={`oc-dot sev-${s}`} />{s === 'UNKNOWN' ? '심각도 미확인' : s} {group.counts[s]}</span>)}</span>

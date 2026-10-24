@@ -36,7 +36,9 @@ export function packageGroups(findings) {
       group.counts[SEVERITIES.includes(finding.severity) ? finding.severity : 'UNKNOWN']++
     }
   }
-  return { groups: [...groups.values()], unlinked }
+  const all = [...groups.values()]
+  selectPackageGroups(all).filter(g => g.priority in grades).forEach((g, i) => { g.displayRank = i + 1 })
+  return { groups: all, unlinked }
 }
 
 export function selectPackageGroups(groups, query = '', priority = 'all', order = 'priority') {
