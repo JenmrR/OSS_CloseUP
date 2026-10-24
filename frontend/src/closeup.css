@@ -314,7 +314,12 @@ button.oc-card:focus-visible { outline: 2px solid var(--oc-sea); outline-offset:
 /* Package groups: native disclosure supports keyboard and touch. */
 .oc-package-group { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; color: inherit; background: #fff; border: 1px solid var(--oc-line); border-radius: 10px; margin: 12px 0; padding: 14px 16px; cursor: pointer; line-height: 2; overflow-wrap: anywhere; }
 .oc-package-block.with-findings { border: 1px solid var(--oc-line); border-radius: 10px; margin: 12px 0; }
-.oc-package-block.with-findings .oc-package-group { border: 0; margin: 0; border-radius: 10px 10px 0 0; }
+.oc-package-row { display: flex; align-items: stretch; }
+.oc-package-row .oc-package-group { flex: 1; }
+.oc-package-toggle { border: 0; background: transparent; color: var(--oc-sea); font-size: 16px; width: 40px; cursor: pointer; border-radius: 10px 0 0 10px; }
+.oc-package-toggle:hover { background: #F5F9FF; }
+.oc-package-toggle:focus-visible { outline: 2px solid var(--oc-cyan); outline-offset: -2px; }
+.oc-package-block.with-findings .oc-package-group { border: 0; margin: 0; padding-left: 4px; border-radius: 0 10px 10px 0; }
 .oc-package-block.with-findings .oc-group-findings { margin: 0; padding: 0 16px 6px 32px; }
 .oc-package-group:hover { border-color: var(--oc-sea); background: #F5F9FF; }
 .oc-package-go { margin-left: auto; font-size: 20px; color: var(--oc-sea); }
