@@ -569,6 +569,7 @@ export default function App() {
               scanStatus={scan && scan.status}
               group={pkgGroup}
               rankLabel={pkgGroup.displayRank ? `${pkgGroup.displayRank}위` : '미산정·확인 필요'}
+              maintenance={maintenance}
               onBack={closeDetail}
               onFinding={openDetail}
             />

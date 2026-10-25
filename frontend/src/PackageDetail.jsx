@@ -12,9 +12,18 @@ function pathLabels(item) {
   return path.map((p, i) => (i === 0 ? p.name : `${p.name}@${p.version}`))
 }
 
-function FixPrompt({ group, path, pathState }) {
+// 설치 경로에서 바로 위 패키지를 찾고, 유지보수 조회의 사용 중단(deprecated) 여부를 붙인다.
+function parentOf(item, maintenance) {
+  const path = (item && item.path) || []
+  if (path.length < 3) return null // [프로젝트, 상위, 이 패키지] 이상일 때만 상위가 있다
+  const p = path[path.length - 2]
+  const m = ((maintenance && maintenance.items) || []).find((x) => x.name === p.name && x.installed_version === p.version)
+  return { name: p.name, version: p.version, deprecated: m ? m.deprecated : null }
+}
+
+function FixPrompt({ group, path, parent, pathState }) {
   const [copied, setCopied] = useState(false)
-  const text = buildFixPrompt(group, { path })
+  const text = buildFixPrompt(group, { path, parent })
   async function copy() {
     try {
       await navigator.clipboard.writeText(text)
@@ -38,7 +47,7 @@ function FixPrompt({ group, path, pathState }) {
   )
 }
 
-export default function PackageDetail({ scanId, scanStatus, group, rankLabel, onBack, onFinding }) {
+export default function PackageDetail({ scanId, scanStatus, group, rankLabel, maintenance, onBack, onFinding }) {
   const firstId = group.entries[0]?.finding?.finding_id
   const [paths, setPaths] = useState({ key: null })
   const key = `${scanId}:${firstId}`
@@ -49,7 +58,7 @@ export default function PackageDetail({ scanId, scanStatus, group, rankLabel, on
       .then((data) => {
         if (cancelled) return
         const item = (data.items || []).find((x) => x.name === group.name && x.installed_version === group.version && x.status === 'available')
-        setPaths({ key, path: pathLabels(item) })
+        setPaths({ key, path: pathLabels(item), item })
       })
       .catch(() => { if (!cancelled) setPaths({ key, error: true }) })
     return () => { cancelled = true }
@@ -79,7 +88,7 @@ export default function PackageDetail({ scanId, scanStatus, group, rankLabel, on
 
       <AiReport scanId={scanId} scanStatus={scanStatus} pkg={{ name: group.name, version: group.version }} onFinding={onFinding} hideFindingList />
 
-      <FixPrompt group={group} path={current.path || []} pathState={current.loading ? 'loading' : current.error ? 'error' : 'ok'} />
+      <FixPrompt group={group} path={current.path || []} parent={parentOf(current.item, maintenance)} pathState={current.loading ? 'loading' : current.error ? 'error' : 'ok'} />
 
       <section className="oc-panel" aria-label="이 패키지의 취약점">
         <h2 className="oc-ptitle" style={{ marginBottom: 10 }}>이 패키지의 취약점</h2>
