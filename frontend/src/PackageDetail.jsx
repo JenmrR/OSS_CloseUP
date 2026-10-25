@@ -39,7 +39,7 @@ function FixPrompt({ group, path, parent, pathState }) {
         <h2 className="oc-ptitle">수정 프롬프트</h2>
         <button type="button" className="oc-btn" onClick={copy}>{copied ? '복사됨' : '복사'}</button>
       </div>
-      <p className="oc-hint">Cursor 같은 AI 코딩 도구에 붙여넣으면, 프로젝트를 직접 확인하면서 이 패키지를 고치도록 요청합니다. 검사 결과의 식별자·심각도·버전만 넣고 권고 설명문은 넣지 않습니다.
+      <p className="oc-hint">AI 코딩 도구에 붙여넣으면, 프로젝트를 직접 확인하면서 이 패키지를 고치도록 요청합니다.
         {pathState === 'loading' && ' 설치 경로를 불러오는 중입니다.'}
         {pathState === 'error' && ' 설치 경로를 불러오지 못해 경로 없이 만들었습니다.'}</p>
       <pre className="oc-fix-prompt">{text}</pre>

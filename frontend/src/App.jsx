@@ -524,6 +524,26 @@ export default function App() {
   const duration = scanDuration(scan)
   const tabName = (TABS.find(([key]) => key === tab) || TABS[0])[1]
 
+  const listPanel = (
+      <section className="oc-panel" aria-label={tabName}>
+        <div className="oc-phead">
+          <div className="left">
+            <h2 className="oc-ptitle">{tabName}</h2>
+
+          </div>
+          <label className="oc-search">
+            <Icon name="search" size={18} />
+            <input value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="패키지명 또는 CVE 검색" aria-label="패키지명 또는 CVE 검색" />
+          </label>
+        </div>
+        {tab === 'first' && <FirstLook vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onPackage={openPackage} onTab={selectTab} />}
+        {tab === 'findings' && <Findings queryFailed={findingsQueryFailed} vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} onPackage={openPackage} />}
+        {tab === 'licenses' && <Licenses data={packages} q={q.trim().toLowerCase()} />}
+        {tab === 'maintenance' && <Maintenance data={maintenance} q={q.trim().toLowerCase()} />}
+        {tab === 'packages' && <Packages data={packages} q={q.trim().toLowerCase()} />}
+      </section>
+  )
   return (
     <div className="oc">
       <Sidebar view={view === 'package' ? 'detail' : view} tab={tab} counts={counts} onTab={selectTab} onNewScan={newScan}
@@ -599,33 +619,19 @@ export default function App() {
             <Progress scan={scan} />
             {tab === 'first' && <SummaryCards onNavigate={selectTab} packages={packages} vulns={vulns} findings={findings} maintenance={maintenance} scan={scan} />}
 
-            {tab === 'first' && <>
-            <p className="oc-hint" role="status">{priorityStateText(findings?.priority_evaluation)}{findings?.priority_evaluation?.current_result_available && ` · 심각도 미확인 ${findings.priority_evaluation.summary?.unknown_finding_count ?? 0}건`}</p>
-            <div className="oc-row2">
-              <AiReport scanId={scanId} scanStatus={scan && scan.status} findings={findings} onFinding={openDetail} onPackage={openPackage} />
-              <SeverityDonut vulns={vulns} findings={findings} scan={scan} />
-            </div>
+            {tab === 'first' && <p className="oc-hint" role="status">{priorityStateText(findings?.priority_evaluation)}{findings?.priority_evaluation?.current_result_available && ` · 심각도 미확인 ${findings.priority_evaluation.summary?.unknown_finding_count ?? 0}건`}</p>}
 
-            </>}
-
-            <section className="oc-panel" aria-label={tabName}>
-              <div className="oc-phead">
-                <div className="left">
-                  <h2 className="oc-ptitle">{tabName}</h2>
-
+            {/* 먼저 볼 항목: 왼쪽 열에 AI 보고서와 목록을 쌓고 도넛은 오른쪽에 둔다.
+                AI 보고서를 접으면 목록이 바로 위로 올라와 빈 칸이 생기지 않는다. */}
+            {tab === 'first' ? (
+              <div className="oc-row2">
+                <div className="oc-col">
+                  <AiReport scanId={scanId} scanStatus={scan && scan.status} findings={findings} onFinding={openDetail} onPackage={openPackage} />
+                  {listPanel}
                 </div>
-                <label className="oc-search">
-                  <Icon name="search" size={18} />
-                  <input value={q} onChange={(e) => setQ(e.target.value)}
-                    placeholder="패키지명 또는 CVE 검색" aria-label="패키지명 또는 CVE 검색" />
-                </label>
+                <SeverityDonut vulns={vulns} findings={findings} scan={scan} />
               </div>
-              {tab === 'first' && <FirstLook vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onPackage={openPackage} onTab={selectTab} />}
-              {tab === 'findings' && <Findings queryFailed={findingsQueryFailed} vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} onPackage={openPackage} />}
-              {tab === 'licenses' && <Licenses data={packages} q={q.trim().toLowerCase()} />}
-              {tab === 'maintenance' && <Maintenance data={maintenance} q={q.trim().toLowerCase()} />}
-              {tab === 'packages' && <Packages data={packages} q={q.trim().toLowerCase()} />}
-            </section>
+            ) : listPanel}
           </>
         )}
       </main>

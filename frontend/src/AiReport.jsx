@@ -121,8 +121,6 @@ export default function AiReport({ scanId, scanStatus, findingId = null, pkg = n
           {busy && <p className="state" role="status">설명을 생성하고 저장하고 있습니다. 잠시 기다려 주세요.</p>}
           {generationError && <p className="err" role="alert">{generationError}</p>}
           {!canGenerate && <p className="note">검사가 완료되거나 부분 완료된 뒤 생성할 수 있습니다.</p>}
-          <p className="note">{findingId ? '생성 시 선택한 취약점의 패키지명·검사 식별자·등급·의존성 정보를 OpenAI에 전송합니다.' : `생성 시 ${pkg ? '이 패키지' : '먼저 볼 패키지'}의 이름과 취약점 설명(최대 3건)을 OpenAI에 전송합니다.`} API 사용료가 발생할 수 있습니다. {findingId ? 'AI는 근거에 맞는 설명을 선택합니다.' : '위험 설명만 AI가 쓰고, 패키지·설치 경로·수정 버전 문장은 검사 결과로 만듭니다.'}</p>
-          <p className="note">순서·심각도·버전·검사 상태는 검사 시스템 값이며, AI는 설명에만 사용됩니다. 설명이 없어도 아래 검사 결과는 그대로 확인할 수 있습니다.</p>
         </>
       )}
     </section>
