@@ -33,7 +33,7 @@ RUN set -eu; \
 # ---------- 2) 실제 worker 이미지 ----------
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
-    TRIVY_CACHE_DIR=/cache/trivy OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY=/cache/osv
+    TRIVY_CACHE_DIR=/cache/trivy
 COPY --from=tools /usr/local/bin/trivy /usr/local/bin/osv-scanner /usr/local/bin/syft /usr/local/bin/
 
 WORKDIR /app
@@ -44,7 +44,7 @@ COPY run_sample_scan.sh ./run_sample_scan.sh
 
 # root가 아닌 사용자. uid 1000 = WSL/리눅스 기본 사용자와 같게 해서 results 폴더 쓰기 권한 문제 방지
 RUN useradd --create-home --uid 1000 worker \
- && mkdir -p /cache/trivy /cache/osv /work/results \
+ && mkdir -p /cache/trivy /work/results \
  && chown -R worker:worker /cache /work \
  && chmod +x /app/run_sample_scan.sh
 USER worker

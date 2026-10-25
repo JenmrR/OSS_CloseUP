@@ -1,6 +1,6 @@
-"""Vulnerability DB refresh policy: download at most once per refresh period (default one day).
+"""Trivy vulnerability DB refresh policy: download at most once per refresh period (default one day).
 
-Within the period the scanners run against the cached DB without contacting the DB source.
+Within the period Trivy runs against the cached DB without contacting the DB source.
 A marker file records when the last successful download-enabled run finished; the marker is
 ignored when the cached DB file itself is missing, so a wiped cache is always re-downloaded.
 """
@@ -10,7 +10,6 @@ from pathlib import Path
 
 REFRESH_SECONDS = int(os.getenv('VULN_DB_REFRESH_SECONDS', '86400'))
 TRIVY_CACHE = Path(os.getenv('TRIVY_CACHE_DIR', '/cache/trivy'))
-OSV_CACHE = Path(os.getenv('OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY', '/cache/osv'))
 
 
 def _marker(cache_dir, name):
@@ -18,11 +17,7 @@ def _marker(cache_dir, name):
 
 
 def _db_present(cache_dir, name):
-    cache_dir = Path(cache_dir)
-    if name == 'trivy':
-        return (cache_dir / 'db' / 'trivy.db').is_file()
-    # OSV-Scanner stores one archive per ecosystem; this project scans npm only.
-    return any(p.is_file() for p in cache_dir.glob('*/npm/all.zip'))
+    return (Path(cache_dir) / 'db' / f'{name}.db').is_file()
 
 
 def is_fresh(cache_dir, name, now=None):
@@ -44,5 +39,5 @@ def mark_downloaded(cache_dir, name, now=None):
 
 
 def policy():
-    """Which scanners may use the cache only, for this scan."""
-    return {'trivy': is_fresh(TRIVY_CACHE, 'trivy'), 'osv': is_fresh(OSV_CACHE, 'osv')}
+    """Whether Trivy may use its cached DB only, for this scan."""
+    return {'trivy': is_fresh(TRIVY_CACHE, 'trivy')}

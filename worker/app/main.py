@@ -88,17 +88,17 @@ def verify_inputs(conn, scan_id):
 
 
 def commands(lock, out, fresh=None):
-    """fresh: {'trivy': bool, 'osv': bool}; True means use the cached vulnerability DB without updating it."""
+    """fresh: {'trivy': bool}; True means Trivy uses its cached vulnerability DB without updating it.
+    OSV queries the OSV API: its offline mode re-reads the whole npm DB archive on every scan
+    (measured ~19s vs ~1s for Trivy), which is slower than the online query."""
     fresh = fresh or {}
     trivy_update = ['--skip-db-update', '--skip-java-db-update'] if fresh.get('trivy') else []
-    # OSV matches against a local copy of the OSV DB instead of querying the API per scan.
-    osv_update = [] if fresh.get('osv') else ['--download-offline-databases']
     return [
         ('trivy', ['trivy','fs','--scanners','vuln','--format','json','--output',str(out/'trivy.json'),
             '--cache-dir',os.getenv('TRIVY_CACHE_DIR','/cache/trivy'),'--db-repository','ghcr.io/aquasecurity/trivy-db:2',
             *trivy_update,'--disable-telemetry','--skip-version-check','--no-progress','--timeout','10m',str(lock)],
             [('raw_result','trivy.json')], {0}),
-        ('osv', ['osv-scanner','scan','source','-L',str(lock),'--offline-vulnerabilities',*osv_update,
+        ('osv', ['osv-scanner','scan','source','-L',str(lock),
             '--format','json','--output-file',str(out/'osv.json')],
             [('raw_result','osv.json')], {0,1}),
         ('syft', ['syft',f'file:{lock}','-o',f'syft-json={out / "syft.json"}','-o',f'spdx-json={out / "sbom.spdx.json"}','-q'],
@@ -203,10 +203,10 @@ def run_tools(conn, scan, specs, out, fresh=None):
                 name,outputs=futures[future]
                 result=future.result()
                 db=None
-                if name in ('trivy','osv'):
+                if name=='trivy':
                     db='cached' if fresh.get(name) else 'refreshed' if result[0]=='completed' else 'refresh_failed'
                     if db=='refreshed':
-                        vuln_db.mark_downloaded(vuln_db.TRIVY_CACHE if name=='trivy' else vuln_db.OSV_CACHE,name)
+                        vuln_db.mark_downloaded(vuln_db.TRIVY_CACHE,name)
                 states[name]=_finish_tool(conn,scan,name,started[name],outputs,out,result,{'vulnerability_db':db} if db else None)
     except BaseException:
         abort.set()
