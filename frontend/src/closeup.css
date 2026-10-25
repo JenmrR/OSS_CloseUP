@@ -24,7 +24,6 @@
   --oc-tint: #F6F8FC;
   --oc-tint-line: #E4E9F2;
   --oc-active: #E9F0FD;    /* 사이드바·탭 활성 바탕 */
-  --oc-dots: #E1E6EF;      /* 바탕 점 무늬 */
   /* 이전 이름 호환 */
   --oc-nav: var(--oc-sub);
   --oc-off: var(--oc-faint);
@@ -51,10 +50,7 @@ html body { margin: 0; padding: 0; display: block; min-width: 0; max-width: none
 html body #root { max-width: none; margin: 0; padding: 0; text-align: left; }
 
 .oc { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh;
-  /* 아주 옅은 점 무늬 바탕: 흰 카드가 종이처럼 얹혀 보이게 */
   background-color: var(--oc-canvas);
-  background-image: radial-gradient(var(--oc-dots) 1px, transparent 1px);
-  background-size: 20px 20px; background-position: 248px 0;
   font-family: var(--oc-font); color: var(--oc-text); font-size: 14px; line-height: 1.5; text-align: left;
   -webkit-font-smoothing: antialiased; font-feature-settings: 'tnum' 0; letter-spacing: -0.003em; }
 .oc *, .oc *::before, .oc *::after { box-sizing: border-box; }
@@ -301,7 +297,7 @@ html body #root { max-width: none; margin: 0; padding: 0; text-align: left; }
   .oc-info { grid-template-columns: 1fr; }
 }
 @media (max-width: 860px) {
-  .oc { grid-template-columns: minmax(0, 1fr); background-position: 0 0; }
+  .oc { grid-template-columns: minmax(0, 1fr); }
   .oc-side { min-height: 0; border-right: 0; border-bottom: 1px solid var(--oc-line); }
   .oc-side-in { position: static; height: auto; padding: 16px; }
   .oc-main { padding: 24px 16px 48px; }
