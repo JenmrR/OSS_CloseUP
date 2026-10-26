@@ -200,6 +200,8 @@ export function packageFromKey(key) {
 }
 
 export function parseRoute(hash) {
+  const group = /^#\/scan\/([0-9a-fA-F-]{36})\/package-group\/(pkg_group_[0-9a-f]{64})$/.exec(hash || '')
+  if (group) return { scanId: group[1], findingId: null, pkg: { groupId: group[2] } }
   const m = ROUTE.exec(hash || '')
   if (!m) return { scanId: null, findingId: null }
   const pkg = m[3] ? packageFromKey(m[3]) : null
@@ -208,6 +210,7 @@ export function parseRoute(hash) {
 
 export function routeHash(scanId, findingId, section = 'first', pkg = null) {
   if (!scanId) return ''
+  if (pkg?.groupId) return `#/scan/${scanId}/package-group/${encodeURIComponent(pkg.groupId)}`
   if (pkg) return `#/scan/${scanId}/package/${encodeURIComponent(`${pkg.name}@${pkg.version}`)}`
   return findingId ? `#/scan/${scanId}/finding/${findingId}` : `#/scan/${scanId}${section !== 'first' && ['findings', 'licenses', 'maintenance', 'packages'].includes(section) ? `/${section}` : ''}`
 }

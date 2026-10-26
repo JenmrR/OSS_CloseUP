@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import './closeup.css'
 import {
-  getScan, getPackages, getMaintenance, getFindings, getSbomInfo, downloadSbom,
+  getScan, getPackages, getMaintenance, getFindings, getSbomInfo, downloadSbom, getPackageResults,
 } from './api'
 import {
   STAGES, ACTIVE, stageProgress, computeProgress, stagesDone, scanDuration,
-  licenseState, vulnScanFailed, vulnItems, priorityComputed,
+  licenseState, vulnItems,
   priorityStateText, relationLabel, licenseSummary, maintenanceSummary, packageSummary,
   findingLabel, parseRoute, routeHash,
 } from './display'
@@ -15,8 +15,7 @@ import PackageDetail from './PackageDetail'
 import Upload from './Upload'
 import { SummaryCards, SeverityDonut } from './Overview'
 import Icon from './Icons'
-import PackageFindingList from './PackageFindingList'
-import { packageGroups, selectPackageGroups } from './packageGroups'
+import PackageApiList from './PackageApiList'
 
 const STATUS_LABEL = {
   pending: '대기', queued: '대기', running: '진행 중', completed: '완료',
@@ -161,80 +160,6 @@ function Progress({ scan }) {
 // ── 목록 탭 ──
 function Loading() { return <p className="oc-empty">불러오는 중…</p> }
 
-function FirstLook({ vulns, findings, scan, q, onPackage, onTab }) {
-  if (!findings) return <Loading />
-  const status = (findings.normalization || {}).status
-  if (status !== 'completed' && vulns.length === 0) {
-    return <p className="oc-empty">취약점 결과를 정리하는 중입니다 ({label(status)}). 0건이라는 뜻이 아닙니다.</p>
-  }
-  if (vulns.length === 0) {
-    return vulnScanFailed(scan)
-      ? <p className="oc-empty err">취약점 검사 일부가 실패했습니다. 발견된 항목이 없어 보여도 확인하지 못한 취약점이 있을 수 있습니다.</p>
-      : <p className="oc-empty">먼저 볼 취약점이 없습니다. 알려진 취약점이 발견되지 않았다는 뜻이며, 코드에 문제가 없다는 보장은 아닙니다.</p>
-  }
-  if (!priorityComputed(vulns)) {
-    return (
-      <p className="oc-empty">{findings.priority_evaluation?.current_result_available ? '계산은 완료됐지만 등급이 있는 연결 항목이 없습니다. 심각도와 패키지 연결 정보를 확인해 주세요.' : priorityStateText(findings.priority_evaluation)} <button type="button" className="oc-link" onClick={() => onTab('findings')}>취약점 탭</button>에서 전체 목록을 볼 수 있어요.</p>
-    )
-  }
-  const top = selectPackageGroups(packageGroups(vulns).groups).filter(g => ['P0', 'P1', 'P2'].includes(g.priority)).slice(0, 5)
-  const rows = selectPackageGroups(top, q)
-  if (rows.length === 0) return <p className="oc-empty">{q ? '검색 결과가 없습니다.' : '먼저 볼 항목이 없습니다. 취약점 탭에서 전체 목록을 볼 수 있어요.'}</p>
-  return (
-    <>
-      <PackageFindingList groups={rows} onPackage={onPackage} />
-      <p className="oc-hint">패키지를 누르면 AI 설명, 수정 프롬프트, 취약점 목록을 볼 수 있습니다.</p>
-    </>
-  )
-}
-
-function Findings({ vulns, findings, scan, q, onOpen, onPackage, queryFailed }) {
-  const [priorityFilter, setPriorityFilter] = useState('all')
-  const [sortOrder, setSortOrder] = useState('priority')
-  if (!findings) return queryFailed
-    ? <p className="oc-empty" role="status">취약점 목록을 불러오지 못했습니다. 위의 ‘다시 불러오기’를 눌러 주세요.</p>
-    : <Loading />
-  const status = (findings.normalization || {}).status
-  if (status !== 'completed' && vulns.length === 0) {
-    return <p className="oc-empty">취약점 결과를 정리하는 중입니다 ({label(status)}). 취약점 0건이라는 뜻이 아닙니다.</p>
-  }
-  const scanFailed = vulnScanFailed(scan)
-  if (vulns.length === 0) {
-    return scanFailed
-      ? <p className="oc-empty err">취약점 검사 일부가 실패했습니다. 발견된 항목이 없는 것처럼 보여도 확인하지 못한 취약점이 있을 수 있습니다.</p>
-      : <p className="oc-empty">취약점 검사가 정상 완료되었고, 알려진 취약점은 발견되지 않았습니다. 코드에 문제가 없다는 보장은 아닙니다.</p>
-  }
-  const grouped = packageGroups(vulns)
-  const rows = selectPackageGroups(grouped.groups, q, priorityFilter, sortOrder)
-  const unlinked = grouped.unlinked.filter(f => matches(q, findingLabel(f)))
-  return (
-    <>
-      <div className="oc-priority-controls">
-        <label>조치 우선순위 <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
-          <option value="all">전체</option><option value="P0">가장 먼저 확인</option>
-          <option value="P1">이어서 확인</option><option value="P2">다음 조치 계획</option>
-          <option value="P3">낮은 우선순위</option><option value="unranked">미산정·확인 필요</option>
-        </select></label>
-        <label>정렬 <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-          <option value="priority">우선순위 높은 순</option><option value="original">기존 목록 순</option>
-        </select></label>
-        <span role="status">{rows.length}개 패키지 · 패키지–취약점 연결 {rows.reduce((n, g) => n + g.entries.length, 0)}건</span>
-      </div>
-      {scanFailed && <p className="err" style={{ marginBottom: 8 }}>취약점 검사 일부가 실패해 이 목록이 전부가 아닐 수 있습니다.</p>}
-      {rows.length === 0 ? <p className="oc-empty">선택한 조건에 해당하는 패키지가 없습니다.</p> : (
-        <PackageFindingList groups={rows} onPackage={onPackage} onOpen={onOpen} showFindings />
-      )}
-      {unlinked.length > 0 && <section aria-label="패키지 연결 미확인 취약점">
-        <h3>패키지 연결 미확인 {unlinked.length}건</h3>
-        <p className="oc-hint">패키지 필터와 별도로 표시합니다. 연결 정보가 없어도 취약점은 유지됩니다.</p>
-        {unlinked.map(f => <p key={f.finding_id}><button type="button" className="oc-link" onClick={() => onOpen(f.finding_id)}>{findingLabel(f)} 상세 보기</button></p>)}
-      </section>}
-      <p className="oc-hint">패키지를 누르면 패키지 상세를, 취약점 식별자를 누르면 고치는 방법과 근거를 볼 수 있습니다. 심각도는 검사 엔진 값을 그대로 씁니다. 조치 우선순위는 별도 규칙으로 계산하며 심각도를 낮추지 않습니다.</p>
-    </>
-  )
-}
-
-// 라이선스 탭: 확인이 필요한 패키지만 모아서 보여준다. 법적 판정은 하지 않는다.
 function Licenses({ data, q }) {
   if (!data) return <Loading />
   const status = (data.package_storage || {}).status
@@ -348,13 +273,14 @@ export default function App() {
   const [scan, setScan] = useState(null)
   const [packages, setPackages] = useState(null)
   const [findings, setFindings] = useState(null)
+  const [packageResults, setPackageResults] = useState(null)
+  const [packageQueryFailed, setPackageQueryFailed] = useState(false)
   const [maintenance, setMaintenance] = useState(null)
   const [sbom, setSbom] = useState(null)
   const [sbomBusy, setSbomBusy] = useState(false)
   const [tab, setTab] = useState(() => parseRoute(window.location.hash).section || 'first')
   const [q, setQ] = useState('')
   const [error, setError] = useState(null)
-  const [findingsQueryFailed, setFindingsQueryFailed] = useState(false)
   const timer = useRef(null)
 
   const [reload, setReload] = useState(0)
@@ -367,30 +293,30 @@ export default function App() {
     const stale = () => generation.current !== currentGeneration
 
     async function tick() {
-      setFindingsQueryFailed(false)
+      setPackageQueryFailed(false)
       try {
         const current = await getScan(scanId)
         if (stale()) return
         setScan(current)
         const results = await Promise.allSettled([
-          getPackages(scanId), getFindings(scanId), getMaintenance(scanId), getSbomInfo(scanId),
+          getPackages(scanId), getFindings(scanId), getMaintenance(scanId), getSbomInfo(scanId), getPackageResults(scanId),
         ])
         if (stale()) return
-        const setters = [setPackages, setFindings, setMaintenance, setSbom]
-        const names = ['패키지', '취약점', '유지보수', 'SBOM']
+        const setters = [setPackages, setFindings, setMaintenance, setSbom, setPackageResults]
+        const names = ['패키지', '취약점', '유지보수', 'SBOM', '패키지 묶음']
         const errors = []
         results.forEach((result, index) => {
           setters[index](result.status === 'fulfilled' ? result.value : null)
           if (result.status === 'rejected') errors.push(`${names[index]}: ${result.reason.message}`)
         })
-        setFindingsQueryFailed(results[1].status === 'rejected')
+        setPackageQueryFailed(results[4].status === 'rejected')
         setError(errors.length ? errors.join(' / ') : null)
         if (ACTIVE.has(current.status)) {
           scheduledTimer = setTimeout(tick, 3000)
           timer.current = scheduledTimer
         }
       } catch (err) {
-        if (!stale()) { setError(err.message); setFindingsQueryFailed(true) }
+        if (!stale()) { setError(err.message); setPackageQueryFailed(true); setPackageResults(null) }
       }
     }
 
@@ -423,9 +349,12 @@ export default function App() {
     else requestAnimationFrame(() => window.scrollTo(0, listScroll.current))
   }, [detailId, pkgRoute])
 
-  function openPackage(name, version) {
+  function openPackage(name, version, groupId) {
     if (!detailId && !pkgRoute) listScroll.current = window.scrollY
-    const pkg = { name, version }
+    const matches = (packageResults?.items || []).filter(g => g.name === name && g.installed_version === version)
+    const resolved = groupId || (matches.length === 1 ? matches[0].package_group_id : null)
+    if (!resolved) { setError('패키지 묶음을 확인할 수 없습니다. 취약점 목록에서 선택해 주세요.'); return }
+    const pkg = { groupId: resolved }
     window.history.pushState({ fromList: true, section: tab }, '', routeHash(scanId, null, tab, pkg))
     setDetailId(null)
     setPkgRoute(pkg)
@@ -457,7 +386,7 @@ export default function App() {
     generation.current++
     if (timer.current) clearTimeout(timer.current)
     setScan(null); setPackages(null); setFindings(null); setMaintenance(null); setSbom(null)
-    setError(null); setFindingsQueryFailed(false); setQ('')
+    setError(null); setPackageQueryFailed(false); setPackageResults(null); setQ('')
   }
 
   function start(id) {
@@ -510,12 +439,13 @@ export default function App() {
   const vulns = vulnItems(findings)
   const detailIndex = detailId ? vulns.findIndex((f) => f.finding_id === detailId) : -1
   const view = !scanId ? 'upload' : detailId ? 'detail' : pkgRoute ? 'package' : 'result'
-  const pkgGroup = pkgRoute ? packageGroups(vulns).groups.find((g) => g.name === pkgRoute.name && g.version === pkgRoute.version) : null
+  const legacyGroups = pkgRoute && !pkgRoute.groupId ? (packageResults?.items || []).filter(g => g.name === pkgRoute.name && g.installed_version === pkgRoute.version) : []
+  const pkgGroupId = pkgRoute?.groupId || (legacyGroups.length === 1 ? legacyGroups[0].package_group_id : null)
 
-  const firstCount = findings && priorityComputed(vulns) ? Math.min(5, packageGroups(vulns).groups.filter(g => ['P0', 'P1', 'P2'].includes(g.priority)).length) : null
+  const firstCount = packageResults?.ranked_total != null ? Math.min(5, packageResults.items.filter(g => g.global_rank != null && ['P0', 'P1', 'P2'].includes(g.priority)).length) : null
   const counts = {
     first: firstCount,
-    findings: findings ? vulns.length : null,
+    findings: packageResults?.unique_finding_count ?? null,
     licenses: packages ? licenseSummary(packages).total : null,
     maintenance: maintenance ? maintenanceSummary(maintenance).flagged : null,
     packages: packages ? packageSummary(packages).total : null,
@@ -537,8 +467,10 @@ export default function App() {
               placeholder="패키지명 또는 CVE 검색" aria-label="패키지명 또는 CVE 검색" />
           </label>
         </div>
-        {tab === 'first' && <FirstLook vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onPackage={openPackage} onTab={selectTab} />}
-        {tab === 'findings' && <Findings queryFailed={findingsQueryFailed} vulns={vulns} findings={findings} scan={scan} q={q.trim().toLowerCase()} onOpen={openDetail} onPackage={openPackage} />}
+        {['first', 'findings'].includes(tab) && <PackageApiList data={packageResults} failed={packageQueryFailed} scanId={scanId}
+          q={q} firstOnly={tab === 'first'} onPackage={openPackage} onFinding={openDetail}
+          findingLabels={Object.fromEntries(vulns.map(f => [f.finding_id, findingLabel(f)]))}
+          onRefresh={() => setReload(v => v + 1)} />}
         {tab === 'licenses' && <Licenses data={packages} q={q.trim().toLowerCase()} />}
         {tab === 'maintenance' && <Maintenance data={maintenance} q={q.trim().toLowerCase()} />}
         {tab === 'packages' && <Packages data={packages} q={q.trim().toLowerCase()} />}
@@ -582,14 +514,14 @@ export default function App() {
         )}
 
         {view === 'package' && (
-          pkgGroup ? (
+          pkgGroupId ? (
             <PackageDetail
-              key={`${pkgGroup.name}@${pkgGroup.version}`}
+              key={`${pkgGroupId}:${reload}`}
               scanId={scanId}
               scanStatus={scan && scan.status}
-              group={pkgGroup}
-              rankLabel={pkgGroup.displayRank ? `${pkgGroup.displayRank}위` : '미산정·확인 필요'}
-              maintenance={maintenance}
+              groupId={pkgGroupId}
+              snapshot={packageResults?.snapshot_id}
+              onRefresh={() => { setPackageResults(null); setReload(v => v + 1) }}
               onBack={closeDetail}
               onFinding={openDetail}
             />

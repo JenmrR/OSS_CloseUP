@@ -1,106 +1,88 @@
 import { useEffect, useState } from 'react'
-import { getDependencyPaths } from './api'
-import { findingLabel, fixSummary, SEVERITIES } from './display'
-import { commonFixText } from './packageGroups'
-import { buildFixPrompt } from './fixPrompt'
-import { CommonFix, SeverityBadge } from './PackageFindingList'
+import { getPackageDetail } from './api'
 import AiReport from './AiReport'
+import { findingLabel, relationLabel, SEVERITIES } from './display'
+import { buildFixPrompt } from './fixPrompt'
+import { SeverityBadge } from './PackageFindingList'
 
-// 저장된 최단 경로를 '프로젝트 → 상위@버전 → 패키지@버전' 형태로 바꾼다.
-function pathLabels(item) {
-  const path = (item && item.path) || []
-  return path.map((p, i) => (i === 0 ? p.name : `${p.name}@${p.version}`))
+export function PackageFindings({ findings, onFinding }) {
+  return <ul className="oc-group-findings">{[...findings].sort((a, b) =>
+    SEVERITIES.indexOf(a.severity || 'UNKNOWN') - SEVERITIES.indexOf(b.severity || 'UNKNOWN')).map(f =>
+    <li key={f.finding_id} style={{ display: 'block' }}>
+      <button type="button" className="oc-link" onClick={() => onFinding(f.finding_id)}>{findingLabel(f)}</button>{' '}
+      <SeverityBadge severity={f.severity} />
+      {f.manual_review_required && <span className="oc-tag warn">수동 확인</span>}
+      {(f.installation_links || []).map(l => <div key={l.package_id} className="oc-hint">
+        <span>{l.lockfile_path || '설치 위치 미제공'} · {relationLabel(l.relationship)}</span>
+        {l.fixed_version_candidates?.length ? l.fixed_version_candidates.map((c, i) =>
+          <div key={i}>수정 후보: <strong>{c.value || c.raw || '값 미제공'}</strong> · 출처: {c.source_tool || '미제공'}
+            {c.advisory_id ? ` · ${c.advisory_id}` : ''}
+            {(c.range || c.raw || c.json_pointer) && <details><summary>후보 원문·범위</summary><pre className="oc-fix-prompt">{JSON.stringify(c, null, 2)}</pre></details>}
+          </div>) : <div>보고된 수정 후보 없음 · 수정 불가 판정은 아닙니다.</div>}
+      </div>)}
+    </li>)}</ul>
 }
 
-// 설치 경로에서 바로 위 패키지를 찾고, 유지보수 조회의 사용 중단(deprecated) 여부를 붙인다.
-function parentOf(item, maintenance) {
-  const path = (item && item.path) || []
-  if (path.length < 3) return null // [프로젝트, 상위, 이 패키지] 이상일 때만 상위가 있다
-  const p = path[path.length - 2]
-  const m = ((maintenance && maintenance.items) || []).find((x) => x.name === p.name && x.installed_version === p.version)
-  return { name: p.name, version: p.version, deprecated: m ? m.deprecated : null }
-}
-
-function FixPrompt({ group, path, parent, pathState }) {
-  const [copied, setCopied] = useState(false)
-  const text = buildFixPrompt(group, { path, parent })
+export default function PackageDetail({ scanId, groupId, snapshot, onBack, onFinding, onRefresh }) {
+  const [state, setState] = useState(null)
+  const [copied, setCopied] = useState('')
+  const key = `${scanId}:${groupId}:${snapshot || ''}`
+  useEffect(() => {
+    let cancelled = false
+    getPackageDetail(scanId, groupId, snapshot).then(data => {
+      if (!cancelled) setState({ key, data })
+    }).catch(error => { if (!cancelled) setState({ key, error }) })
+    return () => { cancelled = true }
+  }, [scanId, groupId, snapshot, key])
+  const current = state?.key === key ? state : null
+  const response = current?.data
+  const group = response?.item
+  let text = '', promptError = ''
+  if (response) {
+    try { text = buildFixPrompt(response) } catch (e) { promptError = e.message }
+  }
   async function copy() {
     try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      setCopied(false) // 복사가 막힌 환경에서도 아래 문구를 직접 선택해 복사할 수 있다
+      // Revalidate before copying so an older rendered snapshot is not silently reused.
+      const fresh = await getPackageDetail(scanId, groupId, response.snapshot_id)
+      await navigator.clipboard.writeText(buildFixPrompt(fresh))
+      setCopied('복사했습니다.')
+    } catch (e) {
+      if (e.status === 409) setState({ key, error: e })
+      else setCopied('복사하지 못했습니다. 아래 문구를 직접 선택해 복사해 주세요.')
     }
   }
-  return (
-    <section className="oc-panel" aria-label="수정 프롬프트">
-      <div className="oc-phead">
-        <h2 className="oc-ptitle">수정 프롬프트</h2>
-        <button type="button" className="oc-btn" onClick={copy}>{copied ? '복사됨' : '복사'}</button>
+  return <div className="oc-detail">
+    <div className="oc-detailnav"><button type="button" className="oc-btn" onClick={onBack}>← 목록으로</button></div>
+    {!current ? <p role="status">패키지 상세를 불러오는 중…</p> : current.error ?
+      <section className="oc-panel" role="alert"><p>{current.error.status === 409 ? '검사 결과가 변경되었거나 아직 준비되지 않았습니다. 최신 자료를 다시 불러와 주세요.' : '패키지 상세를 불러오지 못했습니다.'}</p>
+        <button className="oc-btn" onClick={onRefresh}>최신 결과 다시 불러오기</button></section> : <>
+      <div><div className="oc-dtitle"><h1>{group.name}@{group.installed_version || '버전 미확인'}</h1>
+        <span className="oc-pill">{group.global_rank != null ? `${group.global_rank}위` : group.priority_status === 'severity_unknown' ? '심각도 확인 필요' : '순위 미산정'}</span>
+        <span className="oc-tag">{group.ecosystem}</span></div>
+        <p className="oc-group-counts"><span>취약점 {group.finding_count}건</span>
+          {SEVERITIES.filter(s => group.severity_counts[s]).map(s => <SeverityBadge key={s} severity={s} count={group.severity_counts[s]} />)}</p>
+        <p className="oc-hint">전체 취약점 해결 여부 미확인 · 수정 후보는 취약점·설치별 근거입니다.</p>
+        {response.result_state === 'partial' && <p className="err">부분 결과입니다. 확인하지 못한 취약점이 있을 수 있습니다.</p>}
+        <p className="oc-hint">중복 검토: {response.deduplication_status === 'completed' ? '완료' : '확인 대기'}</p>
       </div>
-      <p className="oc-hint">AI 코딩 도구에 붙여넣으면, 프로젝트를 직접 확인하면서 이 패키지를 고치도록 요청합니다.
-        {pathState === 'loading' && ' 설치 경로를 불러오는 중입니다.'}
-        {pathState === 'error' && ' 설치 경로를 불러오지 못해 경로 없이 만들었습니다.'}</p>
-      <pre className="oc-fix-prompt">{text}</pre>
-    </section>
-  )
-}
-
-export default function PackageDetail({ scanId, scanStatus, group, rankLabel, maintenance, onBack, onFinding }) {
-  const firstId = group.entries[0]?.finding?.finding_id
-  const [paths, setPaths] = useState({ key: null })
-  const key = `${scanId}:${firstId}`
-  useEffect(() => {
-    if (!firstId) return undefined
-    let cancelled = false
-    getDependencyPaths(scanId, firstId)
-      .then((data) => {
-        if (cancelled) return
-        const item = (data.items || []).find((x) => x.name === group.name && x.installed_version === group.version && x.status === 'available')
-        setPaths({ key, path: pathLabels(item), item })
-      })
-      .catch(() => { if (!cancelled) setPaths({ key, error: true }) })
-    return () => { cancelled = true }
-  }, [scanId, firstId, key, group.name, group.version])
-  const current = paths.key === key ? paths : { loading: true }
-  const indirect = group.entries.every((e) => e.packages.every((p) => p.relationship === 'indirect'))
-  const sorted = [...group.entries].sort((a, b) => SEVERITIES.indexOf(a.finding.severity) - SEVERITIES.indexOf(b.finding.severity))
-
-  return (
-    <div className="oc-detail">
-      <div className="oc-detailnav">
-        <button type="button" className="oc-btn" onClick={onBack}>← 목록으로</button>
-      </div>
-      <div>
-        <div className="oc-dtitle">
-          <h1>{group.name}@{group.version}</h1>
-          <span className="oc-pill">{rankLabel}</span>
-          <span className="oc-tag">{indirect ? '다른 패키지가 사용' : '직접 설치'}</span>
-        </div>
-        <p className="oc-group-counts" style={{ marginTop: 8 }}>
-          <span>취약점 {group.entries.length}건</span>
-          {SEVERITIES.filter((s) => group.counts[s]).map((s) => <SeverityBadge key={s} severity={s} count={group.counts[s]} />)}
-          <CommonFix fix={group.commonFix} />
-        </p>
-        {group.commonFix?.status !== 'all' && <p className="oc-hint">{commonFixText(group)}</p>}
-      </div>
-
-      <AiReport scanId={scanId} scanStatus={scanStatus} pkg={{ name: group.name, version: group.version }} onFinding={onFinding} hideFindingList />
-
-      <FixPrompt group={group} path={current.path || []} parent={parentOf(current.item, maintenance)} pathState={current.loading ? 'loading' : current.error ? 'error' : 'ok'} />
-
-      <section className="oc-panel" aria-label="이 패키지의 취약점">
-        <h2 className="oc-ptitle" style={{ marginBottom: 10 }}>이 패키지의 취약점</h2>
-        <ul className="oc-group-findings">{sorted.map(({ finding, packages }, i) => (
-          <li key={finding.finding_id || i}>
-            <button type="button" className="oc-link" disabled={!finding.finding_id} onClick={() => onFinding(finding.finding_id)}>{findingLabel(finding)}</button>
-            <SeverityBadge severity={finding.severity} />
-            {finding.manual_review_required && <span className="oc-tag warn">수동 확인</span>}
-            <span className="muted">{[...new Set(packages.map((p) => fixSummary(p).text))].join(' · ')}</span>
-          </li>
-        ))}</ul>
+      <section className="oc-panel"><h2 className="oc-ptitle">설치 정보</h2>
+        {group.installations.map(p => <div key={p.package_id} style={{ marginTop: 10 }}>
+          <strong>{p.lockfile_path || '설치 위치 미제공'}</strong> · {relationLabel(p.relationship)}
+          <div className="oc-hint">라이선스: {p.licenses?.length ? p.licenses.join(' · ') : '정보 없음'}</div>
+        </div>)}
+        <p className="oc-hint">설치 위치는 상위 의존 경로나 수정할 파일명을 뜻하지 않습니다.</p>
       </section>
-    </div>
-  )
+      <section className="oc-panel" aria-label="이 패키지의 취약점"><h2 className="oc-ptitle">이 패키지의 취약점과 수정 근거</h2>
+        <PackageFindings findings={group.findings || []} onFinding={onFinding} />
+      </section>
+      {group.ecosystem === 'npm' && group.installed_version && <><p className="oc-hint">AI 설명은 별도로 생성된 요약입니다. 수정 프롬프트의 전체 취약점 근거를 함께 확인해 주세요.</p><AiReport scanId={scanId} scanStatus={response.result_state === 'partial' ? 'partial' : 'completed'} pkg={{ name: group.name, version: group.installed_version }} onFinding={onFinding} hideFindingList /></>}
+      <section className="oc-panel" aria-label="수정 프롬프트"><div className="oc-phead"><h2 className="oc-ptitle">수정 프롬프트</h2>
+        <button type="button" className="oc-btn" disabled={!text} onClick={copy}>복사</button></div>
+        <p className="oc-hint">관련 취약점 전체와 설치별 근거를 AI 코딩 도구에 전달합니다. 복사 시 서버 AI를 호출하지 않습니다.</p>
+        {promptError ? <p role="alert">{promptError}</p> : <pre className="oc-fix-prompt">{text}</pre>}
+        <p role="status">{copied}</p>
+      </section>
+    </>}
+  </div>
 }
