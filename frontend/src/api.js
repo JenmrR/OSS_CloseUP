@@ -93,3 +93,37 @@ export async function downloadSbom(scanId) {
 const packageQuery = (name, version) => `?name=${encodeURIComponent(name)}&version=${encodeURIComponent(version)}`
 export const getAiPackage = (scanId, name, version) => request(`/scans/${scanId}/ai/package${packageQuery(name, version)}`)
 export const generateAiPackage = (scanId, name, version) => request(`/scans/${scanId}/ai/package${packageQuery(name, version)}`, { method: 'POST' })
+
+// Keep all pages and the unlinked list on the same published snapshot.
+export async function getPackageResults(scanId) {
+  async function collect(resource, snapshot) {
+    const items = []
+    let first
+    do {
+      const params = new URLSearchParams({ limit: '500', offset: String(items.length) })
+      if (snapshot) params.set('snapshot_id', snapshot)
+      const page = await request(`/scans/${scanId}/${resource}?${params}`)
+      if (!page || !Array.isArray(page.items) || !page.snapshot_id) throw new Error('패키지 응답을 확인할 수 없습니다.')
+      if (snapshot && page.snapshot_id !== snapshot) throw new Error('검사 결과가 변경됐습니다. 다시 불러와 주세요.')
+      snapshot = page.snapshot_id
+      first ||= page
+      if (!['ready', 'partial'].includes(page.result_state)) return { ...page, items: [] }
+      if (!Number.isInteger(page.total) || page.total < 0 || page.total !== first.total ||
+          (!page.items.length && items.length < page.total) || items.length + page.items.length > page.total) {
+        throw new Error('전체 패키지 목록을 가져오지 못했습니다. 다시 불러와 주세요.')
+      }
+      items.push(...page.items)
+    } while (items.length < first.total)
+    const ids = items.map(x => x.package_group_id || x.finding_id)
+    if (new Set(ids).size !== ids.length) throw new Error('중복된 목록 응답입니다. 다시 불러와 주세요.')
+    return { ...first, offset: 0, items }
+  }
+  const groups = await collect('vulnerable-packages')
+  if (!['ready', 'partial'].includes(groups.result_state)) return { ...groups, unlinked: [] }
+  const unlinked = await collect('unlinked-vulnerabilities', groups.snapshot_id)
+  if (unlinked.items.length !== groups.unlinked_finding_count) throw new Error('미연결 취약점 건수가 일치하지 않습니다.')
+  return { ...groups, unlinked: unlinked.items }
+}
+export const getPackageDetail = (scanId, groupId, snapshot) => request(
+  `/scans/${scanId}/vulnerable-packages/${encodeURIComponent(groupId)}` +
+  (snapshot ? `?snapshot_id=${encodeURIComponent(snapshot)}` : ''))
