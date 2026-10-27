@@ -399,3 +399,22 @@ button.oc-card:focus-visible { outline: 2px solid var(--oc-sea); outline-offset:
 .oc-common-fix strong { color: var(--oc-sea); font-weight: 600; }
 .oc-fix-prompt { white-space: pre-wrap; word-break: break-word; background: var(--oc-paper); border: 1px solid var(--oc-line); border-radius: var(--oc-r-btn);
   padding: 14px 16px; font-family: var(--oc-mono); font-size: 12.5px; line-height: 1.7; max-height: 420px; overflow: auto; color: var(--oc-text); }
+
+/* AI 설명: 취약점별 소제목 + 문단 */
+.oc-report-risk { margin-top: 14px; padding-left: 12px; border-left: 2px solid var(--oc-line-strong); }
+.oc-report-risk h4 { margin: 0; font-size: 12px; font-weight: 600; color: var(--oc-sub); letter-spacing: .01em; }
+.oc-report-risk .oc-report-body { margin-top: 4px; }
+
+/* 패키지의 취약점: 한 줄 요약 + 출처 목록 */
+.oc-finding-lines li { display: block; padding: 10px 0; }
+.oc-finding-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.oc-finding-meta { margin-top: 4px; }
+.oc-finding-meta strong { color: var(--oc-sea); font-weight: 600; }
+.oc-more { display: inline; margin-left: 8px; }
+.oc-more summary { display: inline; cursor: pointer; color: var(--oc-sea); }
+.oc-more[open] span { display: block; margin-top: 4px; }
+.oc-sources { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--oc-line); }
+.oc-sources h3 { font-size: 12px; font-weight: 600; color: var(--oc-muted); margin-bottom: 6px; }
+.oc-sources li { font-size: 13px; padding: 2px 0; list-style: disc; margin-left: 18px; }
+.oc-sources a { color: var(--oc-sea); font-family: var(--oc-mono); font-size: 12.5px; }
+.oc-sources a:hover { text-decoration: underline; text-underline-offset: 3px; }

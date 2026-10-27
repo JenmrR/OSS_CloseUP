@@ -34,8 +34,10 @@ def snapshot(severities=('HIGH', 'CRITICAL', 'HIGH'), fixes=('2.5.4', '2.5.6', '
 
 
 def risks(s):
-    return {'risks': [{'evidence_id': x['evidence_id'], 'text': f"{x['label']} 취약점은 입력값이 그대로 쓰일 때 요청이 조작될 수 있습니다."}
-                      for x in s['items']]}
+    return {'risks': [{'evidence_id': x['evidence_id'],
+                       'problem': '파일을 보낼 때 항목 사이의 구분값을 추측하기 쉽게 만듭니다.',
+                       'condition': '외부에서 받은 값을 요청에 그대로 넣을 때 위험해집니다.',
+                       'impact': '원래 없던 항목이 요청에 끼어들 수 있습니다.'} for x in s['items']]}
 
 
 def test_package_first_with_severity_order_and_server_written_facts():
@@ -44,7 +46,10 @@ def test_package_first_with_severity_order_and_server_written_facts():
     assert s['items'][0]['severity'] == 'CRITICAL'
     out = render_report(s, risks(s))
     texts = {p['kind']: p['text'] for p in out['paragraphs']}
-    assert [p['kind'] for p in out['paragraphs']] == ['what', 'why', 'path', 'fix']
+    assert [p['kind'] for p in out['paragraphs']] == ['what', 'risk', 'risk', 'risk', 'path', 'fix']
+    first = out['paragraphs'][1]
+    assert first['heading'] == '첫 번째 취약점 · CRITICAL · CVE-2026-1'
+    assert first['text'].startswith('파일을 보낼 때') and first['text'].endswith('끼어들 수 있습니다.')
     assert texts['what'] == '가장 먼저 확인해야 할 패키지는 form-data 2.3.3입니다. 취약점이 3건 있고, 그중 1건이 가장 높은 CRITICAL 등급입니다.'
     assert texts['path'] == 'my-app 프로젝트가 설치한 request 패키지를 통해 form-data 2.3.3 패키지가 함께 설치되었습니다.'
     assert texts['fix'].startswith('2.5.6 이상으로 올리면 취약점 3건이 모두 해결됩니다.')
@@ -56,8 +61,8 @@ def test_only_three_explained_and_rest_counted():
     s = snapshot(extra=2)
     assert len(s['items']) == 3 and s['other_count'] == 2
     out = render_report(s, risks(s))
-    why = next(p for p in out['paragraphs'] if p['kind'] == 'why')['text']
-    assert why.endswith('이 밖에 취약점 2건이 더 있습니다.')
+    other = next(p for p in out['paragraphs'] if p['kind'] == 'other')['text']
+    assert other.startswith('이 밖에 취약점 2건이 더 있습니다.')
     fix = next(p for p in out['paragraphs'] if p['kind'] == 'fix')['text']
     assert '3건이 해결됩니다. 나머지 2건은 수정 버전 정보가 없어' in fix
 
@@ -72,21 +77,39 @@ def test_single_direct_finding_wording():
 
 
 @pytest.mark.parametrize('text', [
-    '두 번째 취약점은 순서가 틀렸습니다.',
-    '첫 번째 취약점은 2.5.6으로 올리면 해결됩니다.',
-    '첫 번째 취약점은 CVE-2026-1과 관련됩니다.',
-    '첫 번째 취약점은 https://example.com 을 보세요.',
-    '첫 번째 취약점은 P1 항목입니다.',
-    '첫 번째 취약점은 실제 사용 여부가 분석되지 않았습니다.',
-    '첫 번째 취약점은 위험해요.',
-    '첫 번째 취약점은 npm update로 고칩니다.',
+    '2.5.6으로 올리면 해결됩니다.',
+    'CVE-2026-1과 관련됩니다.',
+    'https://example.com 을 보세요.',
+    'P1 항목입니다.',
+    '실제 사용 여부가 분석되지 않았습니다.',
+    '위험해요.',
+    'npm update로 고칩니다.',
+    '첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다.',
+    '',
+    '가' * 230 + '니다.',
 ])
-def test_ungrounded_or_off_format_text_rejected(text):
+@pytest.mark.parametrize('field', ['problem', 'condition', 'impact'])
+def test_ungrounded_or_off_format_text_rejected(text, field):
     s = snapshot()
     output = risks(s)
-    output['risks'][0]['text'] = text
+    output['risks'][0][field] = text
     with pytest.raises(GenerationError):
         render_report(s, output)
+
+
+def test_missing_field_rejected():
+    s = snapshot()
+    output = risks(s)
+    del output['risks'][0]['impact']
+    with pytest.raises(GenerationError):
+        render_report(s, output)
+
+
+def test_package_scope_explains_up_to_five():
+    s = snapshot(extra=4, other=True, target=('form-data', '2.3.3'))
+    assert len(s['items']) == 5 and s['other_count'] == 2
+    assert [x['label'] for x in s['items']][-1] == '다섯 번째'
+    assert len(snapshot(extra=4)['items']) == 3
 
 
 def test_missing_or_reordered_items_rejected():

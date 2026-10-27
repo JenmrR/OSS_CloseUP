@@ -5,7 +5,8 @@ import { findingLabel } from './display'
 export default function AiNarrativeReport({ output, onFinding, onPackage, hideFindingList = false }) {
   const pkg = output.package || {}
   const findings = output.findings || []
-  const order = ['what', 'why', 'path', 'fix']
+  // risk(취약점별 설명, 최신 형식)와 why(이전 형식) 모두 표시한다.
+  const order = ['what', 'why', 'risk', 'other', 'path', 'fix']
   const paragraphs = order.flatMap((kind) => (output.paragraphs || []).filter((p) => p.kind === kind))
   return (
     <div className="oc-ai-narrative">
@@ -14,7 +15,9 @@ export default function AiNarrativeReport({ output, onFinding, onPackage, hideFi
         {onPackage && <button type="button" className="oc-report-primary-link" onClick={() => onPackage(pkg.name, pkg.version)}>
           {pkg.name} {pkg.version} <span aria-hidden="true">→</span>
         </button>}
-        {paragraphs.map((p, i) => <p className="oc-report-body" key={`${p.kind}-${i}`}>{p.text}</p>)}
+        {paragraphs.map((p, i) => p.kind === 'risk'
+          ? <div className="oc-report-risk" key={`${p.kind}-${i}`}><h4>{p.heading}</h4><p className="oc-report-body">{p.text}</p></div>
+          : <p className="oc-report-body" key={`${p.kind}-${i}`}>{p.text}</p>)}
         {!hideFindingList && findings.length > 0 && <details className="oc-report-related-more">
           <summary>이 패키지의 취약점 {findings.length}건 보기</summary>
           <ul className="oc-report-related-list">{findings.map((f) => <li key={f.finding_id}>

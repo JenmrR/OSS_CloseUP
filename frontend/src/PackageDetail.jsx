@@ -1,26 +1,44 @@
 import { useEffect, useState } from 'react'
 import { getPackageDetail } from './api'
 import AiReport from './AiReport'
-import { findingLabel, relationLabel, SEVERITIES } from './display'
+import { findingLabel, rangeFixFor, relationLabel, SEVERITIES } from './display'
+import { sourceList } from './advisoryLinks'
 import { buildFixPrompt } from './fixPrompt'
 import { SeverityBadge } from './PackageFindingList'
 
-export function PackageFindings({ findings, onFinding }) {
-  return <ul className="oc-group-findings">{[...findings].sort((a, b) =>
-    SEVERITIES.indexOf(a.severity || 'UNKNOWN') - SEVERITIES.indexOf(b.severity || 'UNKNOWN')).map(f =>
-    <li key={f.finding_id} style={{ display: 'block' }}>
-      <button type="button" className="oc-link" onClick={() => onFinding(f.finding_id)}>{findingLabel(f)}</button>{' '}
-      <SeverityBadge severity={f.severity} />
-      {f.manual_review_required && <span className="oc-tag warn">수동 확인</span>}
-      {(f.installation_links || []).map(l => <div key={l.package_id} className="oc-hint">
-        <span>{l.lockfile_path || '설치 위치 미제공'} · {relationLabel(l.relationship)}</span>
-        {l.fixed_version_candidates?.length ? l.fixed_version_candidates.map((c, i) =>
-          <div key={i}>수정 후보: <strong>{c.value || c.raw || '값 미제공'}</strong> · 출처: {c.source_tool || '미제공'}
-            {c.advisory_id ? ` · ${c.advisory_id}` : ''}
-            {(c.range || c.raw || c.json_pointer) && <details><summary>후보 원문·범위</summary><pre className="oc-fix-prompt">{JSON.stringify(c, null, 2)}</pre></details>}
-          </div>) : <div>보고된 수정 후보 없음 · 수정 불가 판정은 아닙니다.</div>}
-      </div>)}
-    </li>)}</ul>
+// 취약점마다 한 줄: 심각도 · 식별자(상세로 이동) · 내 버전 기준 수정 버전 · 확인한 도구.
+// 나머지 수정 후보(다른 메이저 버전 등)와 원문은 접어 두고, 맨 아래에 출처 링크를 모아 보여준다.
+export function PackageFindings({ findings, version, onFinding, showSources = true }) {
+  const sorted = [...(findings || [])].sort((a, b) =>
+    SEVERITIES.indexOf(a.severity || 'UNKNOWN') - SEVERITIES.indexOf(b.severity || 'UNKNOWN'))
+  const sources = showSources ? sourceList(sorted) : []
+  return <>
+    <ul className="oc-group-findings oc-finding-lines">{sorted.map(f => {
+      const candidates = (f.installation_links || []).flatMap(l => l.fixed_version_candidates || [])
+      const fix = version ? rangeFixFor(version, candidates) : null
+      const tools = [...new Set(candidates.filter(c => fix && c.value === fix).map(c => c.source_tool).filter(Boolean))]
+      const others = [...new Set(candidates.map(c => c.value || c.raw).filter(v => v && v !== fix))]
+      return <li key={f.finding_id}>
+        <div className="oc-finding-line">
+          <SeverityBadge severity={f.severity} />
+          <button type="button" className="oc-link" onClick={() => onFinding(f.finding_id)}>{findingLabel(f)}</button>
+          {f.manual_review_required && <span className="oc-tag warn">수동 확인</span>}
+        </div>
+        <div className="oc-hint oc-finding-meta">
+          {fix ? <>수정 버전 <strong>{fix}</strong> (현재 버전 기준){tools.length ? ` · ${tools.join('·')} 확인` : ''}</>
+            : candidates.length ? '현재 버전에 맞는 수정 버전을 확인하지 못했습니다.' : '보고된 수정 후보 없음 · 수정 불가 판정은 아닙니다.'}
+          {others.length > 0 && <details className="oc-more"><summary>{fix ? `다른 수정 후보 ${others.length}개` : `수정 후보 ${others.length}개`}</summary>
+            <span>{others.join(', ')}{fix ? ' · 현재 버전이 속하지 않은 범위의 수정 버전입니다.' : ''}</span></details>}
+        </div>
+      </li>
+    })}</ul>
+    {sources.length > 0 && <div className="oc-sources">
+      <h3>출처</h3>
+      <ul>{sources.map(s => <li key={s.id}>
+        <a href={s.url} target="_blank" rel="noopener noreferrer">{s.id}</a> <span className="muted">· {s.label}</span>
+      </li>)}</ul>
+    </div>}
+  </>
 }
 
 export default function PackageDetail({ scanId, groupId, snapshot, onBack, onFinding, onRefresh }) {
@@ -73,10 +91,10 @@ export default function PackageDetail({ scanId, groupId, snapshot, onBack, onFin
         </div>)}
         <p className="oc-hint">설치 위치는 상위 의존 경로나 수정할 파일명을 뜻하지 않습니다.</p>
       </section>
-      <section className="oc-panel" aria-label="이 패키지의 취약점"><h2 className="oc-ptitle">이 패키지의 취약점과 수정 근거</h2>
-        <PackageFindings findings={group.findings || []} onFinding={onFinding} />
+      <section className="oc-panel" aria-label="이 패키지의 취약점"><h2 className="oc-ptitle">이 패키지의 취약점</h2>
+        <PackageFindings findings={group.findings || []} version={group.installed_version} onFinding={onFinding} />
       </section>
-      {group.ecosystem === 'npm' && group.installed_version && <><p className="oc-hint">AI 설명은 별도로 생성된 요약입니다. 수정 프롬프트의 전체 취약점 근거를 함께 확인해 주세요.</p><AiReport scanId={scanId} scanStatus={response.result_state === 'partial' ? 'partial' : 'completed'} pkg={{ name: group.name, version: group.installed_version }} onFinding={onFinding} hideFindingList /></>}
+      {group.ecosystem === 'npm' && group.installed_version && <><AiReport scanId={scanId} scanStatus={response.result_state === 'partial' ? 'partial' : 'completed'} pkg={{ name: group.name, version: group.installed_version }} onFinding={onFinding} hideFindingList /></>}
       <section className="oc-panel" aria-label="수정 프롬프트"><div className="oc-phead"><h2 className="oc-ptitle">수정 프롬프트</h2>
         <button type="button" className="oc-btn" disabled={!text} onClick={copy}>복사</button></div>
         <p className="oc-hint">관련 취약점 전체와 설치별 근거를 AI 코딩 도구에 전달합니다. 복사 시 서버 AI를 호출하지 않습니다.</p>
