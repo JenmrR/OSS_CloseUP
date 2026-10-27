@@ -105,7 +105,8 @@ def generate(scan_id: UUID, finding_id: UUID | None = None, package: tuple | Non
                 if attempt > MAX_ATTEMPTS:
                     raise HTTPException(429, "이 설명에서 생성 시도 3회를 사용했습니다. 서버 기록을 확인하세요.")
                 try:
-                    key, model = config()
+                    # Separate name: `key` above is the package key stored in the DB.
+                    api_key, model = config()
                 except GenerationError:
                     raise HTTPException(503, "백엔드의 OPENAI_API_KEY와 OPENAI_MODEL을 먼저 설정하세요.") from None
                 # Validate input size before recording/issuing a paid request.
@@ -129,7 +130,7 @@ def generate(scan_id: UUID, finding_id: UUID | None = None, package: tuple | Non
             validation = {}
             code = None
             try:
-                selected, usage = call_model(snapshot, key, model)
+                selected, usage = call_model(snapshot, api_key, model)
                 output = render_output(snapshot, selected)
                 validation = {"evidence_ids": True, "order": True, "allowed_reasons": True,
                               "renderer": "reviewed Korean sentences; no unrestricted model prose"}

@@ -55,6 +55,18 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.service.generate(self.sid)["status"], "succeeded")
         self.assertTrue(any("pg_advisory_unlock" in str(c) for c in self.conn.execute.call_args_list))
 
+    def test_package_key_is_stored_and_api_key_never_reaches_sql(self):
+        # Regression: the API key from config() once overwrote the package key and was
+        # written to ai_analyses.package_key.
+        self.service.config.return_value = ("sk-test-secret", "model")
+        self.cur.fetchone.side_effect = [None, {"analysis_id": "a"}, {"status": "succeeded"}]
+        self.service.generate(self.sid, package=("form-data", "2.3.3"))
+        params = [str(c) for c in self.cur.execute.call_args_list + self.conn.execute.call_args_list]
+        self.assertFalse(any("sk-test-secret" in p for p in params))
+        insert = next(c for c in self.cur.execute.call_args_list if "INSERT INTO ai_analyses" in str(c))
+        self.assertEqual(insert.args[1][-1], "form-data@2.3.3")
+        self.assertEqual(self.provider.call_args.args[1], "sk-test-secret")
+
     def test_identical_success_reused_without_charge(self):
         row = {"status": "succeeded", "input_fingerprint": fingerprint(self.s), "attempt_no": 1}
         self.cur.fetchone.return_value = row
