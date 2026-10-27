@@ -413,8 +413,11 @@ button.oc-card:focus-visible { outline: 2px solid var(--oc-sea); outline-offset:
 .oc-more { display: inline; margin-left: 8px; }
 .oc-more summary { display: inline; cursor: pointer; color: var(--oc-sea); }
 .oc-more[open] span { display: block; margin-top: 4px; }
-.oc-sources { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--oc-line); }
-.oc-sources h3 { font-size: 12px; font-weight: 600; color: var(--oc-muted); margin-bottom: 6px; }
+.oc-panel.oc-sources .oc-ptitle { margin-bottom: 8px; }
+.oc-more-btn { margin: 6px 0 4px; padding: 5px 12px; border: 1px solid var(--oc-line-strong); border-radius: var(--oc-r-pill);
+  background: var(--oc-canvas); color: var(--oc-sea) !important; font-size: 12px; font-weight: 600; }
+.oc-more-btn:hover { background: var(--oc-paper); }
+.oc-package-block.with-findings .oc-more-btn { margin-left: 0; }
 .oc-sources li { font-size: 13px; padding: 2px 0; list-style: disc; margin-left: 18px; }
 .oc-sources a { color: var(--oc-sea); font-family: var(--oc-mono); font-size: 12.5px; }
 .oc-sources a:hover { text-decoration: underline; text-underline-offset: 3px; }

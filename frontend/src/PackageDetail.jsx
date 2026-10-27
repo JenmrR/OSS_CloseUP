@@ -2,18 +2,21 @@ import { useEffect, useState } from 'react'
 import { getPackageDetail } from './api'
 import AiReport from './AiReport'
 import { findingLabel, rangeFixFor, relationLabel, SEVERITIES } from './display'
-import { sourceList } from './advisoryLinks'
 import { buildFixPrompt } from './fixPrompt'
 import { SeverityBadge } from './PackageFindingList'
 
 // 취약점마다 한 줄: 심각도 · 식별자(상세로 이동) · 내 버전 기준 수정 버전 · 확인한 도구.
-// 나머지 수정 후보(다른 메이저 버전 등)와 원문은 접어 두고, 맨 아래에 출처 링크를 모아 보여준다.
-export function PackageFindings({ findings, version, onFinding, showSources = true }) {
+// 심각도 순으로 위 SHOWN건만 보이고 나머지는 '더 보기'로 펼친다. 출처 링크는 취약점 상세에 있다.
+const SHOWN = 5
+
+export function PackageFindings({ findings, version, onFinding }) {
+  const [all, setAll] = useState(false)
   const sorted = [...(findings || [])].sort((a, b) =>
     SEVERITIES.indexOf(a.severity || 'UNKNOWN') - SEVERITIES.indexOf(b.severity || 'UNKNOWN'))
-  const sources = showSources ? sourceList(sorted) : []
+  const hidden = Math.max(0, sorted.length - SHOWN)
+  const visible = all ? sorted : sorted.slice(0, SHOWN)
   return <>
-    <ul className="oc-group-findings oc-finding-lines">{sorted.map(f => {
+    <ul className="oc-group-findings oc-finding-lines">{visible.map(f => {
       const candidates = (f.installation_links || []).flatMap(l => l.fixed_version_candidates || [])
       const fix = version ? rangeFixFor(version, candidates) : null
       const tools = [...new Set(candidates.filter(c => fix && c.value === fix).map(c => c.source_tool).filter(Boolean))]
@@ -32,12 +35,8 @@ export function PackageFindings({ findings, version, onFinding, showSources = tr
         </div>
       </li>
     })}</ul>
-    {sources.length > 0 && <div className="oc-sources">
-      <h3>출처</h3>
-      <ul>{sources.map(s => <li key={s.id}>
-        <a href={s.url} target="_blank" rel="noopener noreferrer">{s.id}</a> <span className="muted">· {s.label}</span>
-      </li>)}</ul>
-    </div>}
+    {hidden > 0 && <button type="button" className="oc-more-btn" aria-expanded={all} onClick={() => setAll(!all)}>
+      {all ? '접기 ▴' : `나머지 ${hidden}건 더 보기 ▾`}</button>}
   </>
 }
 

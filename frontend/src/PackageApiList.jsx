@@ -25,7 +25,7 @@ function Row({ group, scanId, snapshot, onPackage, onFinding, expandable, onRefr
       </button>
     </div>
     {open && (state?.error ? <p role="alert">{state.error.status === 409 ? '검사 결과가 변경됐습니다.' : '수정 근거를 불러오지 못했습니다.'} <button className="oc-link" onClick={onRefresh}>다시 불러오기</button></p>
-      : state?.data ? <PackageFindings findings={state.data.item.findings} version={state.data.item.installed_version} onFinding={onFinding} showSources={false} /> : <p role="status">불러오는 중…</p>)}
+      : state?.data ? <PackageFindings findings={state.data.item.findings} version={state.data.item.installed_version} onFinding={onFinding} /> : <p role="status">불러오는 중…</p>)}
   </div>
 }
 

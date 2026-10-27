@@ -3,6 +3,7 @@ import { findingLabel, fixGuide, relationLabel, uniqueFixVersions } from './disp
 import AiReport from './AiReport'
 import Icon from './Icons'
 import DependencyPaths from './DependencyPaths'
+import { sourceList } from './advisoryLinks'
 
 function CopyCommand({ command }) {
   const [copied, setCopied] = useState(false)
@@ -78,6 +79,7 @@ export default function FindingDetail({ scanId, scanStatus, actionRank, finding,
   const toolRows = Object.entries(byTool).flatMap(([tool, list]) => (Array.isArray(list) ? list : []).map((s) => ({ tool, ...s })))
   const severity = finding.severity || 'UNKNOWN'
   const ids = (finding.identifiers || []).map(idText).filter(Boolean)
+  const sources = sourceList([finding])
   const title = packages.length === 1 ? `${packages[0].name}@${packages[0].installed_version}` : findingLabel(finding)
 
   return (
@@ -130,6 +132,13 @@ export default function FindingDetail({ scanId, scanStatus, actionRank, finding,
       </section>
 
       <AiReport scanId={scanId} scanStatus={scanStatus} findingId={finding.finding_id} />
+
+      {sources.length > 0 && <section className="oc-panel oc-sources" aria-label="출처">
+        <h2 className="oc-ptitle">출처</h2>
+        <ul>{sources.map((x) => <li key={x.id}>
+          <a href={x.url} target="_blank" rel="noopener noreferrer">{x.id}</a> <span className="muted">· {x.label}</span>
+        </li>)}</ul>
+      </section>}
 
       <details className="oc-panel oc-evidence">
         <summary>
