@@ -21,7 +21,7 @@ function Row({ group, scanId, snapshot, onPackage, onFinding, expandable, onRefr
         <span className="oc-pill">{group.global_rank != null ? `${group.global_rank}위` : group.priority_status === 'severity_unknown' ? '심각도 확인 필요' : '순위 미산정'}</span>
         <span>{group.finding_count}건</span>
         <span className="oc-group-counts">{SEVERITIES.filter(s => group.severity_counts[s]).map(s => <SeverityBadge key={s} severity={s} count={group.severity_counts[s]} />)}</span>
-        <span className="muted">전체 해결 여부 미확인</span><span aria-hidden="true">›</span>
+        <span aria-hidden="true">›</span>
       </button>
     </div>
     {open && (state?.error ? <p role="alert">{state.error.status === 409 ? '검사 결과가 변경됐습니다.' : '수정 근거를 불러오지 못했습니다.'} <button className="oc-link" onClick={onRefresh}>다시 불러오기</button></p>
