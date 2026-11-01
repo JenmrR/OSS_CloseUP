@@ -31,7 +31,7 @@ export function SummaryCards({ packages, vulns, findings, maintenance, scan, onN
     <section className="oc-panel oc-cards" aria-label="검사 요약">
       <Card num={pkgReady ? pkg.total : '—'} label="외부 패키지" icon="box" onClick={() => onNavigate?.('packages')}>
         {pkgReady
-          ? <>직접 {pkg.direct} · 다른 패키지가 사용 {pkg.indirect}{pkg.unknown ? ` · 확인 불가 ${pkg.unknown}` : ''}</>
+          ? <>직접 {pkg.direct} · 간접 {pkg.indirect}{pkg.unknown ? ` · 확인 불가 ${pkg.unknown}` : ''}</>
           : '패키지 목록을 정리하는 중'}
       </Card>
       <Card num={vulnReady ? vulns.length : '—'} label="취약점" icon="alert" onClick={() => onNavigate?.('findings')}>

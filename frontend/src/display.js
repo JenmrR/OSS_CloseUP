@@ -175,7 +175,7 @@ export function routeHash(scanId, findingId, section = 'first', pkg = null) {
 export const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
 const sevIndex = (s) => SEVERITIES.indexOf(SEVERITIES.includes(s) ? s : 'UNKNOWN')
 
-export const RELATION_LABEL = { direct: '직접 설치', indirect: '다른 패키지가 사용', root: '프로젝트 자체', unknown: '확인 불가' }
+export const RELATION_LABEL = { direct: '직접 설치', indirect: '간접 설치', root: '프로젝트 자체', unknown: '확인 불가' }
 export const relationLabel = (r) => RELATION_LABEL[r] || '확인 불가'
 
 // findings 응답에는 라이선스·유지보수 유형도 들어올 수 있다. 취약점만 고른다.
