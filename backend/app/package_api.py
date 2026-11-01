@@ -4,10 +4,9 @@ from typing import Literal
 from uuid import UUID
 import psycopg
 from fastapi import APIRouter, HTTPException, Query
-from psycopg.rows import dict_row
 from .db import connect
-from .priority_view import load_priority
-from .package_view import build_view, filter_groups, public_group
+from .package_reader import load_package_view
+from .package_view import filter_groups, public_group
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -18,22 +17,10 @@ def read_view(scan_id, snapshot_id=None):
         with connect() as conn:
             with conn.transaction():
                 conn.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
-                with conn.cursor(row_factory=dict_row) as cur:
-                    cur.execute('SELECT scan_id,status,attempt_count,worker_id,tool_status FROM scan_runs WHERE scan_id=%s', (scan_id,))
-                    scan = cur.fetchone()
-                    if scan is None:
-                        raise HTTPException(404, 'scan_not_found')
-                    cur.execute('SELECT package_id,ecosystem,name,installed_version,lockfile_path,relationship,licenses,purl,repository_url,repository_full_name FROM packages WHERE scan_id=%s ORDER BY package_id', (scan_id,))
-                    packages = cur.fetchall()
-                    cur.execute("SELECT * FROM findings WHERE scan_id=%s AND type='vulnerability' ORDER BY finding_id", (scan_id,))
-                    findings = cur.fetchall()
-                    cur.execute('SELECT * FROM finding_packages WHERE scan_id=%s ORDER BY finding_id,package_id', (scan_id,))
-                    links = cur.fetchall()
-                state, result = load_priority(conn, scan_id, scan['tool_status'])
+                view = load_package_view(conn, scan_id)
     except psycopg.Error:
         log.exception('Package group lookup failed')
         raise HTTPException(503, 'database_unavailable') from None
-    view = build_view(scan, packages, findings, links, state, result)
     if snapshot_id is not None and snapshot_id != view['meta']['snapshot_id']:
         raise HTTPException(409, {'code': 'snapshot_changed', 'snapshot_id': view['meta']['snapshot_id']})
     return view

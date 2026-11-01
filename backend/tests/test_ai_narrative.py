@@ -9,7 +9,7 @@ def ranged(fixed, introduced='0'):
     return {'value': fixed, 'range': {'type': 'SEMVER', 'events': [{'introduced': introduced}, {'fixed': fixed}]}}
 
 
-def snapshot(severities=('HIGH', 'CRITICAL', 'HIGH'), fixes=('2.5.4', '2.5.6', '2.5.5'), relationship='indirect', extra=0, other=False, target=None):
+def snapshot(severities=('HIGH', 'CRITICAL', 'HIGH'), fixes=('2.5.4', '2.5.6', '2.5.5'), relationship='indirect', extra=0, other=False, target=None, view_rank=None):
     rows = [{'finding_id': str(i), 'package_id': 'p', 'package_name': 'form-data', 'installed_version': '2.3.3',
              'type': 'vulnerability', 'severity': sev, 'relationship': relationship, 'identifiers': [f'CVE-2026-{i}'],
              'evidence': {'normalized': {'evidence': [{'source_tool': 'osv', 'raw': {
@@ -29,8 +29,16 @@ def snapshot(severities=('HIGH', 'CRITICAL', 'HIGH'), fixes=('2.5.4', '2.5.6', '
         edges = [{'parent_package_id': 'root', 'child_package_id': 'p'}]
     fix_list = list(fixes) + [None] * extra
     candidates = {(r['finding_id'], 'p'): ([ranged(fix_list[i])] if fix_list[i] else []) for i, r in enumerate(rows) if r['package_id'] == 'p'}
+    groups = []
+    for pid, name, version in ([('ax', 'axios', '1.10.0')] if other else []) + [('p', 'form-data', '2.3.3')]:
+        fs = [r for r in rows if r['package_id'] == pid]
+        groups.append({'package_group_id': pid, 'ecosystem': 'npm', 'name': name, 'installed_version': version,
+                       'global_rank': len(groups) + 1 if view_rank is None else view_rank,
+                       'finding_ids': [f['finding_id'] for f in fs],
+                       '_findings': [{**f, 'installation_links': [{'package_id': pid}]} for f in fs]})
+    view = {'items': groups, 'meta': {'snapshot_id': 'test-view', 'priority_evaluation': {'current_result_available': True}}}
     return build_snapshot(rows, {'link_results': links}, {'current_result_available': True}, packages, edges,
-                          'completed', [], candidates, target)
+                          'completed', [], candidates, target, view=view)
 
 
 def risks(s):
@@ -52,7 +60,9 @@ def test_package_first_with_severity_order_and_server_written_facts():
     assert first['text'].startswith('파일을 보낼 때') and first['text'].endswith('끼어들 수 있습니다.')
     assert texts['what'] == '가장 먼저 확인해야 할 패키지는 form-data 2.3.3입니다. 취약점이 3건 있고, 그중 1건이 가장 높은 CRITICAL 등급입니다.'
     assert texts['path'] == 'my-app 프로젝트가 설치한 request 패키지를 통해 form-data 2.3.3 패키지가 함께 설치되었습니다.'
-    assert texts['fix'].startswith('2.5.6 이상으로 올리면 취약점 3건이 모두 해결됩니다.')
+    assert texts['fix'].startswith('취약점 3건 중 3건에 범위로 확인한 수정 후보가 있습니다.')
+    assert s['package']['full_remediation_status'] == 'not_evaluated'
+    assert set(f['fix_version'] for f in s['findings']) == {'2.5.4', '2.5.5', '2.5.6'}
     assert 'overrides' in texts['fix']
     assert '분석' not in ' '.join(texts.values())
 
@@ -64,7 +74,8 @@ def test_only_three_explained_and_rest_counted():
     other = next(p for p in out['paragraphs'] if p['kind'] == 'other')['text']
     assert other.startswith('이 밖에 취약점 2건이 더 있습니다.')
     fix = next(p for p in out['paragraphs'] if p['kind'] == 'fix')['text']
-    assert '3건이 해결됩니다. 나머지 2건은 수정 버전 정보가 없어' in fix
+    assert '취약점 5건 중 3건에 범위로 확인한 수정 후보' in fix
+    assert '해결됩니다' not in fix and '이상' not in fix
 
 
 def test_single_direct_finding_wording():
@@ -73,7 +84,9 @@ def test_single_direct_finding_wording():
     texts = {p['kind']: p['text'] for p in render_report(s, risks(s))['paragraphs']}
     assert texts['what'].endswith('취약점이 1건 있고, 심각도는 HIGH 등급입니다.')
     assert texts['path'] == '이 패키지는 my-app 프로젝트에 직접 설치되어 있습니다.'
-    assert texts['fix'] == '2.5.4 이상으로 올리면 이 취약점이 해결됩니다.'
+    assert texts['fix'].startswith('이 취약점의 기록된 영향 범위에서 확인한 수정 후보는 2.5.4입니다.')
+    assert '전체의 해결 여부와 이후 버전의 안전성은 확인하지 않았습니다' in texts['fix']
+    assert '테스트와 재검사' in texts['fix']
 
 
 @pytest.mark.parametrize('text', [
@@ -167,3 +180,9 @@ def test_unknown_package_is_404():
     with pytest.raises(Exception) as err:
         snapshot(target=('left-pad', '1.0.0'))
     assert getattr(err.value, 'status_code', None) == 404
+
+
+def test_view_rank_wins_over_old_link_order():
+    s = snapshot(target=('form-data', '2.3.3'), view_rank=6)
+    assert s['package']['rank'] == 6
+    assert '6위' in render_report(s, risks(s))['paragraphs'][0]['text']

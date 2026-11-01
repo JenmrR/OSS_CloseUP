@@ -1,0 +1,484 @@
+{
+  "compare": [
+    [
+      "1.0.0-beta.10",
+      "1.0.0-beta.2",
+      1
+    ],
+    [
+      "1.0.0-alpha",
+      "1.0.0-alpha.1",
+      -1
+    ],
+    [
+      "1.0.0-1",
+      "1.0.0-alpha",
+      -1
+    ],
+    [
+      "1.0.0-rc.1",
+      "1.0.0",
+      -1
+    ],
+    [
+      "1.0.0+one",
+      "1.0.0+two",
+      0
+    ],
+    [
+      "1.0.0-beta.2",
+      "1.0.0-beta.10",
+      -1
+    ],
+    [
+      "9007199254740992.0.0",
+      "9007199254740993.0.0",
+      -1
+    ],
+    [
+      "1.0.0-9007199254740992",
+      "1.0.0-9007199254740993",
+      -1
+    ],
+    [
+      "v1.0.0",
+      "1.0.0",
+      0
+    ],
+    [
+      "1.0.0-Alpha",
+      "1.0.0-alpha",
+      -1
+    ],
+    [
+      "01.0.0",
+      "1.0.0",
+      null
+    ],
+    [
+      "1.01.0",
+      "1.0.0",
+      null
+    ],
+    [
+      "1.0.01",
+      "1.0.0",
+      null
+    ],
+    [
+      "1.0.0-beta.02",
+      "1.0.0",
+      null
+    ],
+    [
+      "1.0.0-a..b",
+      "1.0.0",
+      null
+    ],
+    [
+      "1.0.0+",
+      "1.0.0",
+      null
+    ],
+    [
+      "1.0",
+      "1.0.0",
+      null
+    ],
+    [
+      "unknown",
+      "1.0.0",
+      null
+    ],
+    [
+      "1.0.0-",
+      "1.0.0",
+      null
+    ],
+    [
+      "1.0.0+one..two",
+      "1.0.0",
+      null
+    ],
+    [
+      null,
+      "1.0.0",
+      null
+    ],
+    [
+      true,
+      "1.0.0",
+      null
+    ]
+  ],
+  "ranges": [
+    {
+      "name": "no prerelease downgrade",
+      "installed": "1.0.0-beta.10",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0"
+              },
+              {
+                "fixed": "1.0.0-beta.2"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": false
+    },
+    {
+      "name": "prerelease upgrade",
+      "installed": "1.0.0-beta.2",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0"
+              },
+              {
+                "fixed": "1.0.0-beta.10"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": "1.0.0-beta.10",
+      "affected": true
+    },
+    {
+      "name": "reintroduced later",
+      "installed": "1.0.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0"
+              },
+              {
+                "fixed": "1.1.0"
+              },
+              {
+                "introduced": "1.2.0"
+              },
+              {
+                "fixed": "1.3.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": "1.1.0",
+      "affected": true
+    },
+    {
+      "name": "reintroduced installed",
+      "installed": "1.2.1",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0"
+              },
+              {
+                "fixed": "1.1.0"
+              },
+              {
+                "introduced": "1.2.0"
+              },
+              {
+                "fixed": "1.3.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": "1.3.0",
+      "affected": true
+    },
+    {
+      "name": "exact fixed boundary",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0"
+              },
+              {
+                "fixed": "1.1.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": false
+    },
+    {
+      "name": "last affected inclusive",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0"
+              },
+              {
+                "last_affected": "1.1.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": true
+    },
+    {
+      "name": "limit is not fix",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0"
+              },
+              {
+                "limit": "1.1.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": null
+    },
+    {
+      "name": "open ended",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "1.0.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": true
+    },
+    {
+      "name": "no evidence",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "value": "1.2.0"
+        }
+      ],
+      "fix": null,
+      "affected": null
+    },
+    {
+      "name": "bad introduced",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "garbage"
+              },
+              {
+                "fixed": "2.0.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": null
+    },
+    {
+      "name": "bad fixed",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0"
+              },
+              {
+                "fixed": "2.0.0-beta.02"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": null
+    },
+    {
+      "name": "empty",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": []
+          }
+        }
+      ],
+      "fix": null,
+      "affected": null
+    },
+    {
+      "name": "double introduced",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0"
+              },
+              {
+                "introduced": "1.0.0"
+              },
+              {
+                "fixed": "2.0.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": null
+    },
+    {
+      "name": "no introduced",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "fixed": "2.0.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": null
+    },
+    {
+      "name": "backwards",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "2.0.0"
+              },
+              {
+                "fixed": "1.0.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": null
+    },
+    {
+      "name": "multi event keys",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0",
+                "fixed": "2.0.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": null
+    },
+    {
+      "name": "unknown event",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": "0"
+              },
+              {
+                "oops": "2.0.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": null
+    },
+    {
+      "name": "non string",
+      "installed": "1.1.0",
+      "candidates": [
+        {
+          "range": {
+            "type": "SEMVER",
+            "events": [
+              {
+                "introduced": 0
+              },
+              {
+                "fixed": "2.0.0"
+              }
+            ]
+          }
+        }
+      ],
+      "fix": null,
+      "affected": null
+    }
+  ]
+}

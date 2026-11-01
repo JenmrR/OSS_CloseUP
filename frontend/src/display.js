@@ -1,3 +1,5 @@
+import { parseSemver, rangeFixFor } from './semver.js'
+export { parseSemver, compareSemver, rangeFixFor } from './semver.js'
 // 화면 표시용 계산 모음. React와 분리해 node --test로 검증한다.
 
 // 검사 단계. 메인 화면에는 도구 이름 대신 역할 이름을 쓴다.
@@ -114,53 +116,6 @@ export function vulnScanFailed(scan) {
 }
 
 // ── 취약점 상세: 고치는 방법 ──────────────────────────────
-
-const SEMVER = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/
-
-export function parseSemver(value) {
-  const m = SEMVER.exec(String(value ?? '').trim())
-  return m ? { nums: [Number(m[1]), Number(m[2]), Number(m[3])], pre: m[4] || null } : null
-}
-
-// a<b: -1, a=b: 0, a>b: 1, 비교 불가: null. 정식 버전이 같은 숫자의 pre-release보다 크다.
-export function compareSemver(a, b) {
-  const x = parseSemver(a)
-  const y = parseSemver(b)
-  if (!x || !y) return null
-  for (let i = 0; i < 3; i += 1) {
-    if (x.nums[i] !== y.nums[i]) return x.nums[i] < y.nums[i] ? -1 : 1
-  }
-  if (x.pre === y.pre) return 0
-  if (!x.pre) return 1
-  if (!y.pre) return -1
-  return x.pre < y.pre ? -1 : 1
-}
-
-// OSV 영향 범위(introduced ~ fixed)에 설치 버전이 들어가는 수정 버전만 고른다.
-// 추측이 아니라 범위 데이터로 확인되는 값만 쓴다. 확인할 수 없으면 null.
-export function rangeFixFor(installed, candidates) {
-  if (!parseSemver(installed)) return null
-  const matches = []
-  for (const c of candidates || []) {
-    const range = c && c.range
-    if (!range || !Array.isArray(range.events) || (range.type && range.type !== 'SEMVER')) continue
-    let introduced = null
-    for (const event of range.events) {
-      if (event && event.introduced !== undefined) {
-        introduced = String(event.introduced)
-      } else if (event && event.fixed !== undefined && introduced !== null) {
-        const fixed = String(event.fixed)
-        const afterStart = introduced === '0' || compareSemver(installed, introduced) >= 0
-        const beforeFix = compareSemver(installed, fixed) === -1
-        if (afterStart && beforeFix && parseSemver(fixed)) matches.push(fixed)
-        introduced = null
-      }
-    }
-  }
-  if (matches.length === 0) return null
-  // 여러 권고가 있으면 모두를 만족하는 가장 높은 값
-  return matches.sort((a, b) => compareSemver(a, b)).at(-1)
-}
 
 // 복사용 명령어에 들어갈 값은 npm 이름·버전 형식일 때만 쓴다(이상한 문자열이 명령어에 섞이지 않게).
 const NPM_NAME = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/

@@ -24,7 +24,7 @@ export default function AiNarrativeReport({ output, onFinding, onPackage, hideFi
             <button type="button" className="oc-report-text-link" disabled={!onFinding} onClick={() => onFinding?.(f.finding_id)}>
               {f.title || findingLabel({ identifiers: f.identifiers }) || '취약점 상세'}
             </button>
-            <span className="muted"> · {f.severity}{f.fix_version ? ` · 수정 버전 ${f.fix_version}` : ''}</span>
+            <span className="muted"> · {f.severity}{f.fix_version ? ` · 수정 후보 ${f.fix_version}` : ''}</span>
           </li>)}</ul>
         </details>}
       </section>
