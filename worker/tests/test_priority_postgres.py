@@ -190,9 +190,25 @@ def test_real_normalized_fixture_reaches_api_and_ai(database,monkeypatch):
     conn.execute("UPDATE scan_runs SET status='partial'")
     report=snapshot_for(conn,scan['scan_id'])
     assert report['priority_evaluation']['current_result_available'] is True
-    assert report['layout']=='narrative-v3'
-    assert report['primary']['finding_id']==outcome['result']['link_results'][0]['finding_id']
-    assert report['primary']['advisories']
+    from backend.app.package_reader import load_package_view
+    view = load_package_view(conn, scan['scan_id'])
+    first_group = view['items'][0]
+    assert report['layout'] == 'package-v1'
+    assert report['package']['package_group_id'] == first_group['package_group_id']
+    assert report['package']['rank'] == first_group['global_rank'] == 1
+    assert report['package']['finding_count'] == first_group['finding_count']
+    assert report['primary_finding_id'] in first_group['finding_ids']
+    assert {f['finding_id'] for f in report['findings']} == set(first_group['finding_ids'])
+    assert report['items'] and all(item['advisories'] for item in report['items'])
+    assert report['total_finding_count'] == 53
+    assert report['package']['full_remediation_status'] == 'not_evaluated'
+    for group in view['items']:
+        if group['ecosystem'] != 'npm':
+            continue
+        package = snapshot_for(conn, scan['scan_id'], package=(group['name'], group['installed_version']))
+        assert package['package']['rank'] == group['global_rank']
+        assert {f['finding_id'] for f in package['findings']} == set(group['finding_ids'])
+        assert package['package']['finding_count'] == group['finding_count']
     detail=snapshot_for(conn,scan['scan_id'],response['items'][0]['finding_id'])
     assert detail['items'][0]['priority'] in ('P0','P1','P2','P3',None)
 

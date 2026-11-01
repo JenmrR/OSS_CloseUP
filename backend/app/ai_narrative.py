@@ -4,9 +4,10 @@ from collections import deque, defaultdict
 import re
 from fastapi import HTTPException
 from psycopg.rows import dict_row
-from .fix_versions import common_fix, range_fix
+from .fix_versions import range_fix
+from .package_reader import load_package_view
 
-VERSION = 'scan-package-v2'
+VERSION = 'scan-package-v3'
 LAYOUT = 'package-v1'
 MAX_EXPLAINED = 3          # 홈 화면 우선 확인 보고서
 MAX_EXPLAINED_PACKAGE = 5  # 패키지 상세 설명
@@ -78,30 +79,34 @@ def _rank(value):
     return SEVERITY_ORDER.index(v) if v in SEVERITY_ORDER else len(SEVERITY_ORDER)
 
 
-def build_snapshot(rows, result, state, packages, edges, scan_status, tools, candidates=None, target=None):
-    """target=None: the first package in the stored order (scan report). target=(name, version): that package."""
+def build_snapshot(rows, result, state, packages, edges, scan_status, tools, candidates=None, target=None, *, view):
+    """Select an authoritative API group; package targets use the existing npm endpoint contract."""
     from .ai_generation import fingerprint
     candidates = candidates or {}
     links = [x for x in result.get('link_results', []) if x.get('priority') in ('P0', 'P1', 'P2', 'P3')]
     by_link = {(r['finding_id'], r['package_id']): r for r in rows if r['type'] == 'vulnerability'}
     links = [x for x in links if (x['finding_id'], x['package_id']) in by_link]
-    # Package positions follow the stored link order (same as the screen's 1위, 2위 ...).
-    order_keys = []
-    for x in links:
-        row = by_link[x['finding_id'], x['package_id']]
-        key = (row['package_name'], row['installed_version'])
-        if key not in order_keys:
-            order_keys.append(key)
+    # The list API owns grouping and rank. Reuse its view in the same DB snapshot.
+    groups = view['items']
     if target is None:
-        if not links:
+        group = next((g for g in groups if g['global_rank'] is not None), None)
+        if group is None:
             raise HTTPException(409, '현재 우선 확인 대상으로 선정된 취약점이 없습니다. 검사 결과를 확인하세요.')
-        name, version = order_keys[0]
     else:
-        name, version = target
-    same = [r for r in rows if r['type'] == 'vulnerability' and r['package_name'] == name and r['installed_version'] == version]
-    if not same:
-        raise HTTPException(404, '이 검사에서 해당 패키지의 취약점을 찾을 수 없습니다.')
-    rank = order_keys.index((name, version)) + 1 if (name, version) in order_keys else None
+        matching = [g for g in groups if g['ecosystem'] == 'npm'
+                    and (g['name'], g['installed_version']) == target]
+        if not matching:
+            raise HTTPException(404, '이 검사에서 해당 패키지의 취약점을 찾을 수 없습니다.')
+        if len(matching) != 1:
+            raise HTTPException(409, '패키지 설치 정보를 하나로 특정할 수 없습니다.')
+        group = matching[0]
+    name, version = group['name'], group['installed_version']
+    members = {(str(f['finding_id']), str(l['package_id'])) for f in group['_findings']
+               for l in f['installation_links']}
+    same = [r for r in rows if (r['finding_id'], r['package_id']) in members and r['type'] == 'vulnerability']
+    if {r['finding_id'] for r in same} != set(group['finding_ids']):
+        raise HTTPException(409, '패키지 설명과 검사 결과의 취약점 정보가 일치하지 않습니다.')
+    rank = group['global_rank']
     findings, seen = [], set()
     order = {x['finding_id']: i for i, x in enumerate(links)}
     for row in sorted(same, key=lambda r: (_rank(r['severity']), order.get(r['finding_id'], len(order)), r['finding_id'])):
@@ -119,7 +124,7 @@ def build_snapshot(rows, result, state, packages, edges, scan_status, tools, can
     relationship = 'direct' if first.get('relationship') == 'direct' else 'indirect'
     fix_lists = [[c for r in same if r['finding_id'] == f['finding_id'] for c in candidates.get((f['finding_id'], r['package_id']), [])]
                  for f in findings]
-    fix = common_fix(version, fix_lists)
+    fixes = [range_fix(version, c) for c in fix_lists]
     explained = findings[:MAX_EXPLAINED if target is None else MAX_EXPLAINED_PACKAGE]
     labels = ['이'] if len(findings) == 1 else LABELS
     items = [{'evidence_id': 'E' + str(i + 1), 'finding_id': f['finding_id'], 'label': labels[i],
@@ -127,17 +132,20 @@ def build_snapshot(rows, result, state, packages, edges, scan_status, tools, can
     # Server-written heading facts per explained item (not sent to the model).
     item_ids = {f['finding_id']: [x for x in (f.get('identifiers') or []) if isinstance(x, str)][:2] for f in explained}
     return {'layout': LAYOUT, 'scope': 'scan_report' if target is None else 'package',
-            'scan_status': scan_status, 'priority_evaluation': state,
+            'scan_status': scan_status, 'priority_evaluation': view['meta']['priority_evaluation'],
+            'package_snapshot_id': view['meta']['snapshot_id'],
             'source_fingerprint': fingerprint({'rows': rows, 'packages': packages, 'edges': edges, 'candidates': sorted(map(str, candidates.items()))}),
             'package': {'name': name, 'version': version, 'relationship': relationship, 'rank': rank,
                         'path': [p['name'] for p in path], 'finding_count': len(findings),
-                        'severity_counts': counts, 'top_severity': top, 'top_count': counts[top], 'common_fix': fix},
+                        'severity_counts': counts, 'top_severity': top, 'top_count': counts[top],
+                        'package_group_id': group['package_group_id'], 'ecosystem': group['ecosystem'],
+                        'full_remediation_status': 'not_evaluated', 'fix_candidates': fixes},
             'primary_finding_id': first['finding_id'], 'items': items, 'item_ids': item_ids,
             'other_count': len(findings) - len(explained),
             'findings': [{'finding_id': f['finding_id'], 'severity': _severity(f['severity']),
                           'identifiers': (f.get('identifiers') or [])[:4],
                           'title': next((a['title'] for a in advisory_facts(f) if a['title']), ''),
-                          'fix_version': range_fix(version, fix_lists[i])} for i, f in enumerate(findings)],
+                          'fix_version': fixes[i]} for i, f in enumerate(findings)],
             'tools': tools, 'total_finding_count': len({r['finding_id'] for r in rows})}
 
 
@@ -159,7 +167,10 @@ def snapshot_for_report(conn, scan_id, scan, tools, rows, state, result, target=
                        WHERE scan_id=%s''', (scan_id,))
         candidates = {(r['finding_id'], r['package_id']): r['fixed_version_candidates'] or [] for r in cur.fetchall()}
     enriched = [{**row, **{k: v for k, v in evidence.get(row['finding_id'], {}).items() if k != 'finding_id'}} for row in rows]
-    return build_snapshot(enriched, result, state, packages, edges, scan['status'], tools, candidates, target)
+    view = load_package_view(conn, scan_id)
+    if view['meta']['result_state'] not in ('ready', 'partial') or not view['meta']['priority_evaluation'].get('current_result_available'):
+        raise HTTPException(409, '현재 검사 결과의 우선순위를 확인할 수 없습니다.')
+    return build_snapshot(enriched, result, state, packages, edges, scan['status'], tools, candidates, target, view=view)
 
 
 def model_payload(snapshot, model):
@@ -215,16 +226,14 @@ def _path(pkg):
 
 
 def _fix(pkg):
-    fix, n = pkg['common_fix'], pkg['finding_count']
-    if fix['status'] == 'all':
-        text = f"{fix['version']} 이상으로 올리면 " + ('이 취약점이 해결됩니다.' if n == 1 else f'취약점 {n}건이 모두 해결됩니다.')
-    elif fix['status'] == 'partial':
-        text = (f"{fix['version']} 이상으로 올리면 {fix['covered']}건이 해결됩니다. "
-                f"나머지 {n - fix['covered']}건은 수정 버전 정보가 없어 따로 확인이 필요합니다.")
+    candidates = [v for v in pkg['fix_candidates'] if v]
+    if pkg['finding_count'] == 1 and candidates:
+        text = f"이 취약점의 기록된 영향 범위에서 확인한 수정 후보는 {candidates[0]}입니다."
+    elif candidates:
+        text = f"취약점 {pkg['finding_count']}건 중 {len(candidates)}건에 범위로 확인한 수정 후보가 있습니다. 각 취약점의 수정 후보를 확인하세요."
     else:
-        return '모든 취약점을 함께 해결하는 버전은 확인되지 않았습니다. 취약점별 수정 정보를 확인해야 합니다.'
-    if fix.get('major_change'):
-        text += ' 다만 현재와 주요 버전이 달라 호환성 확인이 필요합니다.'
+        text = '현재 설치 버전의 영향 범위에서 확인한 수정 후보가 없습니다. 취약점별 수정 정보를 확인하세요.'
+    text += ' 패키지 전체의 해결 여부와 이후 버전의 안전성은 확인하지 않았습니다. 호환성을 확인하고 변경 후 테스트와 재검사를 진행하세요.'
     if pkg['relationship'] == 'indirect':
         text += ' 직접 설치한 패키지가 아니므로 상위 패키지 업데이트나 overrides가 필요할 수 있습니다.'
     return text

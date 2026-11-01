@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 from test_priority_postgres import database, seed
 from worker.app.priority_storage import evaluate_scan
-from backend.app import package_api
+from backend.app import package_api, package_reader
 from backend.app.main import app
 
 
@@ -254,7 +254,7 @@ def test_repeatable_read_and_snapshot_token_handle_concurrent_publication(scenar
     conn, scan, _, _, client = scenario
     evaluate_scan(conn, scan)
     schema = conn.execute('SELECT current_schema() AS name').fetchone()['name']
-    original = package_api.load_priority
+    original = package_reader.load_priority
     published = False
     def publish_during_read(connection, sid, states):
         nonlocal published
@@ -265,7 +265,7 @@ def test_repeatable_read_and_snapshot_token_handle_concurrent_publication(scenar
                     (Jsonb({'status':'failed','current_result_available':False}), sid))
             published = True
         return original(connection, sid, states)
-    monkeypatch.setattr(package_api, 'load_priority', publish_during_read)
+    monkeypatch.setattr(package_reader, 'load_priority', publish_during_read)
     first = get(client, url(scan))
     assert first['priority_evaluation']['current_result_available'] is True
     assert first['items'][0]['global_rank'] == 1
@@ -321,3 +321,52 @@ def test_changed_calculation_evidence_masks_published_rank(scenario, change):
     assert data['priority_evaluation']['current_result_available'] is False
     assert data['items'][0]['global_rank'] is None
     assert data['items'][0]['priority_status']=='unavailable'
+
+
+def test_ai_uses_exact_api_group_membership_and_null_rank(scenario):
+    from backend.app.ai_service import snapshot_for
+    conn, scan, fid, pid, client = scenario
+    sid = scan['scan_id']
+    duplicate = add_package(conn, sid, 'demo', relationship='indirect')
+    link(conn, sid, fid, duplicate)
+    foreign = add_package(conn, sid, 'demo', ecosystem='pip')
+    foreign_fid = add_finding(conn, sid, 'CRITICAL')
+    link(conn, sid, foreign_fid, foreign)
+    other_version = add_package(conn, sid, 'demo', version='2.0.0')
+    other_fid = add_finding(conn, sid, 'HIGH')
+    link(conn, sid, other_fid, other_version)
+    unknown = add_package(conn, sid, 'unknown')
+    link(conn, sid, add_finding(conn, sid, 'UNKNOWN'), unknown)
+    assert evaluate_scan(conn, scan)['status'] == 'completed'
+    conn.execute("UPDATE scan_runs SET status='partial' WHERE scan_id=%s", (sid,))
+    view = get(client, url(scan))
+    for group in view['items']:
+        if group['ecosystem'] != 'npm':
+            continue
+        snap = snapshot_for(conn, sid, package=(group['name'], group['installed_version']))
+        assert snap['package']['rank'] == group['global_rank']
+        assert snap['package']['package_group_id'] == group['package_group_id']
+        assert snap['package']['finding_count'] == group['finding_count']
+        assert {f['finding_id'] for f in snap['findings']} == set(group['finding_ids'])
+        if group['name'] == 'demo' and group['installed_version'] == '1.0.0':
+            assert snap['package']['finding_count'] == 1
+            assert {f['finding_id'] for f in snap['findings']} == {str(fid)}
+        if group['name'] == 'unknown':
+            assert snap['package']['rank'] is None
+    overview = snapshot_for(conn, sid)
+    assert overview['package']['package_group_id'] == view['items'][0]['package_group_id']
+    assert overview['package_snapshot_id'] == view['snapshot_id']
+
+
+def test_ai_rejects_stale_priority_instead_of_inventing_rank(scenario):
+    from backend.app.ai_service import snapshot_for
+    from fastapi import HTTPException
+    conn, scan, _, _, _ = scenario
+    sid = scan['scan_id']
+    evaluate_scan(conn, scan)
+    conn.execute("UPDATE scan_runs SET status='completed' WHERE scan_id=%s", (sid,))
+    conn.execute("UPDATE scan_runs SET tool_status=jsonb_set(tool_status,'{priority}',%s) WHERE scan_id=%s",
+                 (Jsonb({'status': 'failed', 'current_result_available': False}), sid))
+    with pytest.raises(HTTPException) as err:
+        snapshot_for(conn, sid, package=('demo', '1.0.0'))
+    assert err.value.status_code == 409

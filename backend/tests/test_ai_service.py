@@ -130,6 +130,24 @@ class ServiceTests(unittest.TestCase):
         self.assertTrue(self.service.stale_report(self.sid, {'status': 'succeeded', 'prompt_version': 'scan-evidence-v1'}))
         self.provider.assert_not_called()
 
+    def test_v2_report_and_package_are_stale_without_provider_call(self):
+        from app.ai_narrative import VERSION
+        self.assertEqual(VERSION, 'scan-package-v3')
+        for scope in ('scan_report', 'package'):
+            self.assertTrue(self.service.stale_report(self.sid, {
+                'status': 'succeeded', 'scope': scope, 'prompt_version': 'scan-package-v2'}))
+        self.provider.assert_not_called()
+        self.service.snapshot_for.assert_not_called()
+
+    def test_v3_snapshot_change_marks_cache_stale_without_provider_call(self):
+        from app.ai_narrative import VERSION
+        row = {'status': 'succeeded', 'scope': 'package', 'prompt_version': VERSION,
+               'package_key': 'form-data@2.3.3', 'input_fingerprint': fingerprint(self.s)}
+        self.assertFalse(self.service.stale_report(self.sid, row))
+        self.s['package_snapshot_id'] = 'changed-rank-or-evidence'
+        self.assertTrue(self.service.stale_report(self.sid, row))
+        self.provider.assert_not_called()
+
     def test_snapshot_selects_only_target_finding(self):
         fid = UUID(int=2)
         self.cur.fetchone.return_value = {'status': 'completed'}

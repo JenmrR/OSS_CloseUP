@@ -1,3 +1,4 @@
+import { affectedBy } from './semver.js'
 import { SEVERITIES, compareSemver, findingLabel, parseSemver, rangeFixFor, uniqueFixVersions } from './display.js'
 
 const grades = { P0: 0, P1: 1, P2: 2, P3: 3 }
@@ -52,37 +53,11 @@ export function selectPackageGroups(groups, query = '', priority = 'all', order 
     || a.name.localeCompare(b.name) || a.version.localeCompare(b.version))
 }
 
-// 설치 버전이 이 후보의 영향 범위 안에 있는지. 범위를 해석할 수 없으면 null(확인 불가).
-function affectedBy(version, candidates) {
-  let readable = false
-  for (const c of candidates || []) {
-    const range = c && c.range
-    if (!range || !Array.isArray(range.events) || (range.type && range.type !== 'SEMVER')) continue
-    readable = true
-    let introduced = null
-    for (const event of range.events) {
-      if (event && event.introduced !== undefined) {
-        if (introduced !== null) return null // 끝이 없는 범위가 겹치면 판단하지 않는다
-        introduced = String(event.introduced)
-      } else if (event && introduced !== null && (event.fixed !== undefined || event.last_affected !== undefined)) {
-        const end = String(event.fixed ?? event.last_affected)
-        const afterStart = introduced === '0' || compareSemver(version, introduced) >= 0
-        const cmp = compareSemver(version, end)
-        if (cmp === null) return null
-        if (afterStart && (event.fixed !== undefined ? cmp === -1 : cmp <= 0)) return true
-        introduced = null
-      }
-    }
-    if (introduced !== null && (introduced === '0' || compareSemver(version, introduced) >= 0)) return true
-  }
-  return readable ? false : null
-}
-
 // 0.x는 minor 변경도 호환성이 깨질 수 있어 주요 변경으로 본다.
 function majorChange(from, to) {
   const a = parseSemver(from), b = parseSemver(to)
   if (!a || !b) return false
-  return a.nums[0] !== b.nums[0] || (a.nums[0] === 0 && a.nums[1] !== b.nums[1])
+  return a.core[0] !== b.core[0] || (a.core[0] === '0' && a.core[1] !== b.core[1])
 }
 
 // 패키지의 확인된 취약점을 함께 해결하는 수정 버전. 최신 버전이 아니라, 각 취약점의
@@ -113,8 +88,8 @@ export function commonFixText(group) {
   const fix = group.commonFix || { status: 'none' }
   const indirect = group.entries.every(e => e.packages.every(p => p.relationship === 'indirect'))
   const notes = []
-  if (fix.status === 'all') notes.push(`${fix.version} 이상이면 이 패키지에서 확인된 ${fix.total}건이 모두 영향 범위를 벗어납니다. 최신 버전이 아니라 확인된 최소 공통 버전입니다.`)
-  else if (fix.status === 'partial') notes.push(`${fix.version} 이상이면 ${fix.covered}건이 해결되는 것으로 확인됩니다. 나머지 ${fix.total - fix.covered}건은 수정 정보가 없거나 범위로 확인되지 않아 각 취약점에서 따로 확인하세요.`)
+  if (fix.status === 'all') notes.push(`${fix.version}은 기록된 ${fix.total}건의 영향 범위 밖인 후보입니다. 이후 버전의 안전성과 패키지 전체의 해결 여부는 확인하지 않았습니다.`)
+  else if (fix.status === 'partial') notes.push(`${fix.version}은 기록된 ${fix.covered}건의 영향 범위 밖인 후보입니다. 이후 버전의 안전성과 패키지 전체의 해결 여부는 확인하지 않았습니다. 나머지 ${fix.total - fix.covered}건은 수정 정보가 없거나 범위로 확인되지 않아 각 취약점에서 따로 확인하세요.`)
   else if (fix.status === 'conflict') notes.push(`가장 높은 수정 버전 ${fix.version}도 다른 취약점의 영향 범위에 들어가 공통 버전을 정하지 못했습니다. 각 취약점의 수정 정보를 확인하세요.`)
   else notes.push('범위로 확인된 수정 버전이 없어 공통 버전을 정하지 못했습니다. 각 취약점의 수정 정보를 확인하세요.')
   if (fix.majorChange && fix.status !== 'conflict') notes.push('현재 버전과 주요 버전이 달라 호환성 확인이 필요합니다.')

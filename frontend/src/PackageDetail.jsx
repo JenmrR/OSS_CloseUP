@@ -5,7 +5,7 @@ import { findingLabel, rangeFixFor, relationLabel, SEVERITIES } from './display'
 import { buildFixPrompt } from './fixPrompt'
 import { SeverityBadge } from './PackageFindingList'
 
-// 취약점마다 한 줄: 심각도 · 식별자(상세로 이동) · 내 버전 기준 수정 버전 · 확인한 도구.
+// 취약점마다 한 줄: 심각도 · 식별자(상세로 이동) · 내 버전 기준 수정 후보 · 확인한 도구.
 // 심각도 순으로 위 SHOWN건만 보이고 나머지는 '더 보기'로 펼친다. 출처 링크는 취약점 상세에 있다.
 const SHOWN = 5
 
@@ -28,10 +28,10 @@ export function PackageFindings({ findings, version, onFinding }) {
           {f.manual_review_required && <span className="oc-tag warn">수동 확인</span>}
         </div>
         <div className="oc-hint oc-finding-meta">
-          {fix ? <>수정 버전 <strong>{fix}</strong> (현재 버전 기준){tools.length ? ` · ${tools.join('·')} 확인` : ''}</>
-            : candidates.length ? '현재 버전에 맞는 수정 버전을 확인하지 못했습니다.' : '보고된 수정 후보 없음 · 수정 불가 판정은 아닙니다.'}
+          {fix ? <>수정 후보 <strong>{fix}</strong> (현재 버전 기준){tools.length ? ` · ${tools.join('·')} 확인` : ''}</>
+            : candidates.length ? '현재 버전에 맞는 수정 후보를 확인하지 못했습니다.' : '보고된 수정 후보 없음 · 수정 불가 판정은 아닙니다.'}
           {others.length > 0 && <details className="oc-more"><summary>{fix ? `다른 수정 후보 ${others.length}개` : `수정 후보 ${others.length}개`}</summary>
-            <span>{others.join(', ')}{fix ? ' · 현재 버전이 속하지 않은 범위의 수정 버전입니다.' : ''}</span></details>}
+            <span>{others.join(', ')}{fix ? ' · 각 후보의 근거와 영향 범위를 별도로 확인하세요.' : ''}</span></details>}
         </div>
       </li>
     })}</ul>

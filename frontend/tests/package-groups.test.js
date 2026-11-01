@@ -107,3 +107,13 @@ test('advisories with no known fix stay uncovered instead of blocking the common
   assert.equal(fix.version, '4.17.21')
   assert.equal(fix.covered, 1)
 })
+
+
+test('fix guidance is scoped to an exact candidate despite later reintroduction', () => {
+  const recurrence = { range: { type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.1.0' }, { introduced: '1.2.0' }, { fixed: '1.3.0' }] } }
+  const group = packageGroups([finding('a', [fixLink('1.0.0', [recurrence])])]).groups[0]
+  const text = commonFixText(group)
+  assert.match(text, /1.1.0은 기록된/)
+  assert.match(text, /이후 버전의 안전성과 패키지 전체의 해결 여부는 확인하지 않았습니다/)
+  assert.doesNotMatch(text, /이상|최소 공통|해결됩니다/)
+})
