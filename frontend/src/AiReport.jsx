@@ -6,7 +6,7 @@ import { currentAiData } from './aiPresentation'
 
 const STATE_DOT = { loading: 'var(--oc-cyan)', running: 'var(--oc-cyan)', failed: 'var(--oc-crit)', error: 'var(--oc-crit)' }
 
-const timeOf = (iso) => (iso ? iso.slice(11, 16) : null)
+const timeOf = (iso) => { const d = iso ? new Date(iso) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : null }
 
 export function AiHeader({ title, data }) {
   const at = data && data.status === 'succeeded' ? timeOf(data.created_at) : null
